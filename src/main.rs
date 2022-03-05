@@ -21,6 +21,7 @@ enum Implementation {
     Vecrem,
     Once,
     Precalc,
+    Weight,
 }
 
 fn main() {
@@ -42,6 +43,9 @@ fn main() {
         Implementation::Precalc => {
             play(roget::algorithms::Precalc::new, args.max);
         }
+        Implementation::Weight => {
+            play(roget::algorithms::Weight::new, args.max);
+        }
     }
 }
 
@@ -50,12 +54,17 @@ where
     G: Guesser,
 {
     let w = roget::Wordle::new();
+    let mut score = 0;
+    let mut games = 0;
     for answer in GAMES.split_whitespace().take(max.unwrap_or(usize::MAX)) {
         let guesser = (mk)();
-        if let Some(score) = w.play(answer, guesser) {
-            println!("guessed '{}' in {}", answer, score);
+        if let Some(s) = w.play(answer, guesser) {
+            games += 1;
+            score += s;
+            println!("guessed '{}' in {}", answer, s);
         } else {
             eprintln!("failed to guess");
         }
     }
+    println!("average score: {:.2}", score as f64 / games as f64);
 }
