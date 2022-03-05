@@ -7,7 +7,7 @@ pub struct Naive {
 
 impl Naive {
     pub fn new() -> Self {
-        Naive {
+        Self {
             remaining: HashMap::from_iter(DICTIONARY.lines().map(|line| {
                 let (word, count) = line
                     .split_once(' ')
