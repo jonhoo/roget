@@ -1,11 +1,11 @@
-use crate::{Correctness, Guess, Guesser, DICTIONARY};
+use crate::{Correctness, Guess, Guesser, Word, DICTIONARY};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
-static INITIAL: OnceCell<Vec<(&'static str, usize)>> = OnceCell::new();
+static INITIAL: OnceCell<Vec<(Word, usize)>> = OnceCell::new();
 
 pub struct OnceInit {
-    remaining: Cow<'static, Vec<(&'static str, usize)>>,
+    remaining: Cow<'static, Vec<(Word, usize)>>,
 }
 
 impl OnceInit {
@@ -17,6 +17,10 @@ impl OnceInit {
                         .split_once(' ')
                         .expect("every line is word + space + frequency");
                     let count: usize = count.parse().expect("every count is a number");
+                    let word = word
+                        .as_bytes()
+                        .try_into()
+                        .expect("every dictionary word is 5 characters");
                     (word, count)
                 }))
             })),
@@ -26,29 +30,29 @@ impl OnceInit {
 
 #[derive(Debug, Copy, Clone)]
 struct Candidate {
-    word: &'static str,
+    word: Word,
     goodness: f64,
 }
 
 impl Guesser for OnceInit {
-    fn guess(&mut self, history: &[Guess]) -> String {
+    fn guess(&mut self, history: &[Guess]) -> Word {
         if let Some(last) = history.last() {
             if matches!(self.remaining, Cow::Owned(_)) {
                 self.remaining
                     .to_mut()
-                    .retain(|(word, _)| last.matches(word));
+                    .retain(|&(word, _)| last.matches(word));
             } else {
                 self.remaining = Cow::Owned(
                     self.remaining
                         .iter()
-                        .filter(|(word, _)| last.matches(word))
+                        .filter(|&&(word, _)| last.matches(word))
                         .copied()
                         .collect(),
                 );
             }
         }
         if history.is_empty() {
-            return "tares".to_string();
+            return *b"tares";
         }
 
         let remaining_count: usize = self.remaining.iter().map(|&(_, c)| c).sum();
@@ -60,9 +64,9 @@ impl Guesser for OnceInit {
                 // considering a world where we _did_ guess `word` and got `pattern` as the
                 // correctness. now, compute what _then_ is left.
                 let mut in_pattern_total = 0;
-                for (candidate, count) in &*self.remaining {
+                for &(candidate, count) in &*self.remaining {
                     let g = Guess {
-                        word: Cow::Borrowed(word),
+                        word,
                         mask: pattern,
                     };
                     if g.matches(candidate) {
@@ -86,6 +90,6 @@ impl Guesser for OnceInit {
                 best = Some(Candidate { word, goodness });
             }
         }
-        best.unwrap().word.to_string()
+        best.unwrap().word
     }
 }

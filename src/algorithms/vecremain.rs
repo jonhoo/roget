@@ -1,8 +1,7 @@
-use crate::{Correctness, Guess, Guesser, DICTIONARY};
-use std::borrow::Cow;
+use crate::{Correctness, Guess, Guesser, Word, DICTIONARY};
 
 pub struct Vecrem {
-    remaining: Vec<(&'static str, usize)>,
+    remaining: Vec<(Word, usize)>,
 }
 
 impl Vecrem {
@@ -13,6 +12,10 @@ impl Vecrem {
                     .split_once(' ')
                     .expect("every line is word + space + frequency");
                 let count: usize = count.parse().expect("every count is a number");
+                let word = word
+                    .as_bytes()
+                    .try_into()
+                    .expect("every dictionary word is 5 characters");
                 (word, count)
             })),
         }
@@ -21,17 +24,17 @@ impl Vecrem {
 
 #[derive(Debug, Copy, Clone)]
 struct Candidate {
-    word: &'static str,
+    word: Word,
     goodness: f64,
 }
 
 impl Guesser for Vecrem {
-    fn guess(&mut self, history: &[Guess]) -> String {
+    fn guess(&mut self, history: &[Guess]) -> Word {
         if let Some(last) = history.last() {
-            self.remaining.retain(|(word, _)| last.matches(word));
+            self.remaining.retain(|&(word, _)| last.matches(word));
         }
         if history.is_empty() {
-            return "tares".to_string();
+            return *b"tares";
         }
 
         let remaining_count: usize = self.remaining.iter().map(|&(_, c)| c).sum();
@@ -43,9 +46,9 @@ impl Guesser for Vecrem {
                 // considering a world where we _did_ guess `word` and got `pattern` as the
                 // correctness. now, compute what _then_ is left.
                 let mut in_pattern_total = 0;
-                for (candidate, count) in &self.remaining {
+                for &(candidate, count) in &self.remaining {
                     let g = Guess {
-                        word: Cow::Borrowed(word),
+                        word,
                         mask: pattern,
                     };
                     if g.matches(candidate) {
@@ -69,6 +72,6 @@ impl Guesser for Vecrem {
                 best = Some(Candidate { word, goodness });
             }
         }
-        best.unwrap().word.to_string()
+        best.unwrap().word
     }
 }
