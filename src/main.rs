@@ -20,6 +20,7 @@ enum Implementation {
     Allocs,
     Vecrem,
     Once,
+    Precalc,
 }
 
 fn main() {
@@ -37,6 +38,9 @@ fn main() {
         }
         Implementation::Once => {
             play(roget::algorithms::OnceInit::new, args.max);
+        }
+        Implementation::Precalc => {
+            play(roget::algorithms::Precalc::new, args.max);
         }
     }
 }
