@@ -19,6 +19,7 @@ enum Implementation {
     Naive,
     Allocs,
     Vecrem,
+    Once,
 }
 
 fn main() {
@@ -33,6 +34,9 @@ fn main() {
         }
         Implementation::Vecrem => {
             play(roget::algorithms::Vecrem::new, args.max);
+        }
+        Implementation::Once => {
+            play(roget::algorithms::OnceInit::new, args.max);
         }
     }
 }
