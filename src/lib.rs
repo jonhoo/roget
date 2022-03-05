@@ -108,80 +108,9 @@ pub struct Guess<'a> {
 
 impl Guess<'_> {
     pub fn matches(&self, word: &str) -> bool {
-        assert_eq!(self.word.len(), 5);
-        assert_eq!(word.len(), 5);
-
-        // First, check greens
-        let mut used = [false; 5];
-        for (i, ((g, &m), w)) in self
-            .word
-            .bytes()
-            .zip(&self.mask)
-            .zip(word.bytes())
-            .enumerate()
-        {
-            if m == Correctness::Correct {
-                if g != w {
-                    return false;
-                } else {
-                    used[i] = true;
-                }
-            }
-        }
-
-        for (i, (w, &m)) in word.bytes().zip(&self.mask).enumerate() {
-            if m == Correctness::Correct {
-                // must be correct, or we'd have returned in the earlier loop
-                continue;
-            }
-
-            let mut plausible = true;
-            if self
-                .word
-                .bytes()
-                .zip(&self.mask)
-                .enumerate()
-                .any(|(j, (g, m))| {
-                    if g != w {
-                        return false;
-                    }
-                    if used[j] {
-                        return false;
-                    }
-                    // We're looking at an `w` in `word`, and have found an `w` in the previous guess.
-                    // The color of that previous `w` will tell us whether this `w` _might_ be okay.
-                    match m {
-                        Correctness::Correct => unreachable!(
-                            "all correct guesses should have result in return or be used"
-                        ),
-                        Correctness::Misplaced if j == i => {
-                            // `w` was yellow in this same position last time around, which means that
-                            // `word` _cannot_ be the answer.
-                            plausible = false;
-                            return false;
-                        }
-                        Correctness::Misplaced => {
-                            used[j] = true;
-                            return true;
-                        }
-                        Correctness::Wrong => {
-                            // TODO: early return
-                            plausible = false;
-                            return false;
-                        }
-                    }
-                })
-                && plausible
-            {
-                // The character `w` was yellow in the previous guess.
-            } else if !plausible {
-                return false;
-            } else {
-                // We have no information about character `w`, so word might still match.
-            }
-        }
-
-        true
+        // if guess G gives mask C against answer A, then
+        // guess A should also give mask C against answer G.
+        Correctness::compute(word, &self.word) == self.mask
     }
 }
 
@@ -252,6 +181,11 @@ mod tests {
             check!("abcde" + [M M M M M] allows "eabcd");
             check!("baaaa" + [W C M W W] allows "aaccc");
             check!("baaaa" + [W C M W W] disallows "caacc");
+        }
+
+        #[test]
+        fn from_crash() {
+            check!("tares" + [W M M W W] disallows "brink");
         }
 
         #[test]
