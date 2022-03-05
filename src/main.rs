@@ -17,6 +17,7 @@ struct Args {
 #[derive(ArgEnum, Debug, Clone, Copy)]
 enum Implementation {
     Naive,
+    Allocs,
 }
 
 fn main() {
@@ -25,6 +26,9 @@ fn main() {
     match args.implementation {
         Implementation::Naive => {
             play(roget::algorithms::Naive::new, args.max);
+        }
+        Implementation::Allocs => {
+            play(roget::algorithms::Allocs::new, args.max);
         }
     }
 }
