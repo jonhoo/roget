@@ -3,3 +3,5 @@
 perf.data
 perf.data.old
 roget-*
+*.txt
+callgrind.out.*
