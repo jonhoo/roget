@@ -23,6 +23,7 @@ enum Implementation {
     Precalc,
     Weight,
     Prune,
+    Cutoff,
 }
 
 fn main() {
@@ -49,6 +50,9 @@ fn main() {
         }
         Implementation::Prune => {
             play(roget::algorithms::Prune::new, args.max);
+        }
+        Implementation::Cutoff => {
+            play(roget::algorithms::Cutoff::new, args.max);
         }
     }
 }
