@@ -14,3 +14,5 @@ mod prune;
 pub use prune::Prune;
 mod cutoff;
 pub use cutoff::Cutoff;
+mod automaton;
+pub use automaton::Automaton;

@@ -12,3 +12,5 @@ debug = true
 itertools = "0.10"
 clap = { version = "3", features = ["derive"] }
 once_cell = "1"
+wordle-automaton = "^0.9.0"
+fst = "0.4.7"

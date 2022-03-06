@@ -24,6 +24,7 @@ enum Implementation {
     Weight,
     Prune,
     Cutoff,
+    Automaton,
 }
 
 fn main() {
@@ -53,6 +54,9 @@ fn main() {
         }
         Implementation::Cutoff => {
             play(roget::algorithms::Cutoff::new, args.max);
+        }
+        Implementation::Automaton => {
+            play(roget::algorithms::Automaton::new, args.max);
         }
     }
 }
