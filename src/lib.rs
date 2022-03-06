@@ -54,6 +54,16 @@ pub enum Correctness {
 }
 
 impl Correctness {
+    fn is_misplaced(letter: u8, answer: &str, used: &mut [bool; 5]) -> bool {
+        answer.bytes().enumerate().any(|(i, a)| {
+            if a == letter && !used[i] {
+                used[i] = true;
+                return true;
+            }
+            false
+        })
+    }
+
     fn check(answer: &str, guess: &str, expected: &[Self; 5]) -> bool {
         assert_eq!(answer.len(), 5);
         assert_eq!(guess.len(), 5);
@@ -76,14 +86,7 @@ impl Correctness {
             if *e == Correctness::Correct {
                 continue;
             }
-            let is_misplaced = answer.bytes().enumerate().any(|(i, a)| {
-                if a == g && !used[i] {
-                    used[i] = true;
-                    return true;
-                }
-                false
-            });
-            if is_misplaced != (*e == Correctness::Misplaced) {
+            if Correctness::is_misplaced(g, answer, &mut used) != (*e == Correctness::Misplaced) {
                 return false;
             }
         }
@@ -110,13 +113,7 @@ impl Correctness {
                 // Already marked as green
                 continue;
             }
-            if answer.bytes().enumerate().any(|(i, a)| {
-                if a == g && !used[i] {
-                    used[i] = true;
-                    return true;
-                }
-                false
-            }) {
+            if Correctness::is_misplaced(g, answer, &mut used) {
                 c[i] = Correctness::Misplaced;
             }
         }
@@ -144,7 +141,7 @@ impl Guess<'_> {
     pub fn matches(&self, word: &str) -> bool {
         // if guess G gives mask C against answer A, then
         // guess A should also give mask C against answer G.
-        Correctness::compute(word, &self.word) == self.mask
+        Correctness::check(word, &self.word, &self.mask)
     }
 }
 
