@@ -19,7 +19,7 @@ If you want to remake `dictionary.txt` yourself, first, make
 also how you get `answers.txt`). Then, grab the ngram dataset by
 downloading [these][1grams], then running.
 
-```
+```bash
 rg -Iz "^[a-zA-Z]{5}_[A-Z]+\t" 1-*-of-00024.gz > 5-letters.txt
 awk -F'\t' '{print $1"\t"$NF}' 5-letters.txt | sed 's/_/,/' | awk -F, '{print $1" "$(NF-1)}' > 5-letters-occur.txt
 tr A-Z a-z < 5-letters-occur.txt | sort > 5-letters-lc-sorted.txt
