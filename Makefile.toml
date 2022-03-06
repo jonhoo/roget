@@ -1,0 +1,87 @@
+[tasks.corpus]
+dependencies = [
+    # Featch the google corpus
+    # "corpus-fetch-google",
+    # Extract 5 letters words only
+    "5letters-corpus-raw",
+    "5letters-corpus-occurences",
+    # Process wordle valid list
+    "wordle-corpus-raw",
+    "wordle-corpus-occurences",
+    # Finally copy to the corpus folder
+    "export-corpus",
+]
+
+[tasks.corpus-fetch-google]
+private = true
+command = "wget"
+args = [
+    "-P",
+    "target/corpus",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00000-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00001-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00002-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00003-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00004-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00005-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00006-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00007-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00008-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00009-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00010-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00011-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00012-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00013-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00014-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00015-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00016-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00017-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00018-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00019-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00020-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00021-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00022-of-00024.gz",
+    "http://storage.googleapis.com/books/ngrams/books/20200217/eng/1-00023-of-00024.gz",
+]
+
+[tasks.5letters-corpus-raw]
+private = true
+script_runner = "@shell"
+script = """
+rg -Iz "^[a-zA-Z]{5}_[A-Z]+\t" target/corpus/1-*-of-00024.gz | sd -f=ie '_|\t' ',' > target/corpus/5letters-raw.csv
+"""
+
+[tasks.5letters-corpus-occurences]
+private = true
+script_runner = "@shell"
+script = """
+awk -F, '{ for (i=7;i<NF;i+=3) {$4 += $i}; print tolower($1) "," $2 "," $4 }' < target/corpus/5letters-raw.csv | sort > target/corpus/5letters-raw-occurences.csv
+awk -F, '
+    BEGIN {W="";T="X";C=0}
+    {if (!W) {W=$1;T=$2;C=$3} else if (W==$1) C=C+$3; else {print W "," T "," C; W=$1;T=$2;C=$3}}
+    END {print W "," T "," C}
+' < target/corpus/5letters-raw-occurences.csv > target/corpus/5letters-occurences.csv
+"""
+
+[tasks.wordle-corpus-raw]
+private = true
+script_runner = "@shell"
+script = """
+jq -r '.[] | . + ",true"'  wordle-answers.json > target/corpus/wordle-raw.csv
+jq -r '.[] | . + ",false"' wordle-valids.json >> target/corpus/wordle-raw.csv
+sort -t, -k1b,1 -o target/corpus/wordle-raw.csv{,}
+"""
+
+[tasks.wordle-corpus-occurences]
+private = true
+script_runner = "@shell"
+script = """
+join -t, -a2 target/corpus/5letters-occurences.csv target/corpus/wordle-raw.csv | sd '^([a-z]{5}),(true|false)$' '$1,UNKNOWN,1,$2' > target/corpus/wordle-occurences.csv
+"""
+
+[tasks.export-corpus]
+private = true
+script_runner = "@shell"
+script = """
+sort -nrk3,4 -t, < target/corpus/wordle-occurences.csv | awk -F, '{ print $1 " " $3 }' > dictionary.txt
+"""
