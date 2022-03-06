@@ -54,6 +54,44 @@ pub enum Correctness {
 }
 
 impl Correctness {
+    fn check(answer: &str, guess: &str, expected: &[Self; 5]) -> bool {
+        assert_eq!(answer.len(), 5);
+        assert_eq!(guess.len(), 5);
+        let mut used = [false; 5];
+
+        // Check Correct letters
+        for (i, (a, g)) in answer.bytes().zip(guess.bytes()).enumerate() {
+            if a == g {
+                if expected[i] != Correctness::Correct {
+                    return false;
+                }
+                used[i] = true;
+            } else if expected[i] == Correctness::Correct {
+                return false;
+            }
+        }
+
+        // Check Misplaced letters
+        for (g, e) in guess.bytes().zip(expected.iter()) {
+            if *e == Correctness::Correct {
+                continue;
+            }
+            let is_misplaced = answer.bytes().enumerate().any(|(i, a)| {
+                if a == g && !used[i] {
+                    used[i] = true;
+                    return true;
+                }
+                false
+            });
+            if is_misplaced != (*e == Correctness::Misplaced) {
+                return false;
+            }
+        }
+
+        // The rest will be all correctly Wrong letters
+        true
+    }
+
     fn compute(answer: &str, guess: &str) -> [Self; 5] {
         assert_eq!(answer.len(), 5);
         assert_eq!(guess.len(), 5);

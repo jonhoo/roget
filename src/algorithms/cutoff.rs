@@ -72,11 +72,7 @@ impl Guesser for Cutoff {
                 // correctness. now, compute what _then_ is left.
                 let mut in_pattern_total = 0;
                 for (candidate, count) in &*self.remaining {
-                    let g = Guess {
-                        word: Cow::Borrowed(word),
-                        mask: *pattern,
-                    };
-                    if g.matches(candidate) {
+                    if Correctness::check(candidate, word, pattern) {
                         in_pattern_total += count;
                     }
                 }
