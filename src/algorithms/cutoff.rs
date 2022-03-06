@@ -19,6 +19,7 @@ impl Cutoff {
                         .split_once(' ')
                         .expect("every line is word + space + frequency");
                     let count: usize = count.parse().expect("every count is a number");
+                    // TODO: apply sigmoid to counts
                     (word, count)
                 }));
                 words.sort_unstable_by_key(|&(_, count)| std::cmp::Reverse(count));
@@ -82,7 +83,6 @@ impl Guesser for Cutoff {
                 if in_pattern_total == 0 {
                     return false;
                 }
-                // TODO: apply sigmoid
                 let p_of_this_pattern = in_pattern_total as f64 / remaining_count as f64;
                 sum += p_of_this_pattern * p_of_this_pattern.log2();
                 return true;
@@ -101,7 +101,12 @@ impl Guesser for Cutoff {
             }
 
             let p_word = count as f64 / remaining_count as f64;
-            let goodness = p_word * -sum;
+            let entropy = -sum;
+            // TODO: this should be (minimizing):
+            // (p_word * (history.len() + 1)) + ((1 - p_word) * estimate_remaining_guesses(remaining_entropy))
+            // where remaining_entropy is the existing entropy - entropy
+            // and restimate_remaining_guesses is computed by regression over historical data
+            let goodness = p_word * entropy;
             if let Some(c) = best {
                 // Is this one better?
                 if goodness > c.goodness {
