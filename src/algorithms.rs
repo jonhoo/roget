@@ -14,5 +14,7 @@ mod preprune;
 pub use preprune::PrePrune;
 mod prune;
 pub use prune::Prune;
+mod enumerate;
+pub use enumerate::Enumerate;
 mod cutoff;
 pub use cutoff::Cutoff;
