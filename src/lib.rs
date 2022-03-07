@@ -141,6 +141,34 @@ impl Guess<'_> {
         // The rest will be all correctly Wrong letters
         true
     }
+
+    // Here "compatible" means that the "other" pattern can show up in a subsequent guess, assuming those
+    // subsequent guesses are made from the words that pass the guess that generated the self pattern.
+    //
+    // This is done by know that any better guess must have fewer Wrong characters and more correct characters
+    pub fn compatible_pattern(&self, other_pattern: &[Correctness; 5]) -> bool {
+        let mut self_wrong = 0;
+        let mut self_correct = 0;
+        for c in self.mask.iter() {
+            match c {
+                Correctness::Correct => self_correct += 1,
+                Correctness::Wrong => self_wrong += 1,
+                _ => {}
+            }
+        }
+
+        let mut other_wrong = 0;
+        let mut other_correct = 0;
+        for c in other_pattern.iter() {
+            match c {
+                Correctness::Correct => other_correct += 1,
+                Correctness::Wrong => other_wrong += 1,
+                _ => {}
+            }
+        }
+
+        other_wrong <= self_wrong && other_correct >= self_correct
+    }
 }
 
 pub trait Guesser {

@@ -10,6 +10,8 @@ mod precalc;
 pub use precalc::Precalc;
 mod weight;
 pub use weight::Weight;
+mod preprune;
+pub use preprune::PrePrune;
 mod prune;
 pub use prune::Prune;
 mod cutoff;
