@@ -1,4 +1,5 @@
 use clap::{ArgEnum, Parser};
+use rayon::prelude::*;
 use roget::Guesser;
 
 const GAMES: &str = include_str!("../answers.txt");
@@ -57,22 +58,32 @@ fn main() {
     }
 }
 
-fn play<G>(mut mk: impl FnMut() -> G, max: Option<usize>)
+fn play<G>(mk: impl Fn() -> G + Send + Sync, max: Option<usize>)
 where
     G: Guesser,
 {
     let w = roget::Wordle::new();
-    let mut score = 0;
-    let mut games = 0;
-    for answer in GAMES.split_whitespace().take(max.unwrap_or(usize::MAX)) {
-        let guesser = (mk)();
-        if let Some(s) = w.play(answer, guesser) {
-            games += 1;
-            score += s;
-            println!("guessed '{}' in {}", answer, s);
-        } else {
-            eprintln!("failed to guess");
-        }
-    }
-    println!("average score: {:.2}", score as f64 / games as f64);
+    let games: Vec<&str> = GAMES
+        .split_whitespace()
+        .take(max.unwrap_or(usize::MAX))
+        .collect();
+
+    let game_scores: Vec<usize> = games
+        .into_par_iter()
+        .filter_map(|answer| {
+            let guesser = (mk)();
+            if let Some(s) = w.play(answer, guesser) {
+                println!("guessed '{}' in {}", answer, s);
+                Some(s)
+            } else {
+                eprintln!("failed to guess");
+                None
+            }
+        })
+        .collect();
+        
+    println!(
+        "average score: {:.2}",
+        game_scores.iter().sum::<usize>() as f64 / game_scores.len() as f64
+    );
 }
