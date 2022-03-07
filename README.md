@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/jonhoo/roget/branch/main/graph/badge.svg?token=BMvVKvRuYO)](https://codecov.io/gh/jonhoo/roget)
+
 Original version live-coded [on YouTube](https://youtu.be/doFowk4xj7Q).
 
 The implemented algorithm is almost exactly what was outlined (and
