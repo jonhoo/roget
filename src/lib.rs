@@ -64,37 +64,6 @@ impl Correctness {
         })
     }
 
-    fn check(answer: &str, guess: &str, expected: &[Self; 5]) -> bool {
-        assert_eq!(answer.len(), 5);
-        assert_eq!(guess.len(), 5);
-        let mut used = [false; 5];
-
-        // Check Correct letters
-        for (i, (a, g)) in answer.bytes().zip(guess.bytes()).enumerate() {
-            if a == g {
-                if expected[i] != Correctness::Correct {
-                    return false;
-                }
-                used[i] = true;
-            } else if expected[i] == Correctness::Correct {
-                return false;
-            }
-        }
-
-        // Check Misplaced letters
-        for (g, e) in guess.bytes().zip(expected.iter()) {
-            if *e == Correctness::Correct {
-                continue;
-            }
-            if Correctness::is_misplaced(g, answer, &mut used) != (*e == Correctness::Misplaced) {
-                return false;
-            }
-        }
-
-        // The rest will be all correctly Wrong letters
-        true
-    }
-
     fn compute(answer: &str, guess: &str) -> [Self; 5] {
         assert_eq!(answer.len(), 5);
         assert_eq!(guess.len(), 5);
@@ -139,9 +108,38 @@ pub struct Guess<'a> {
 
 impl Guess<'_> {
     pub fn matches(&self, word: &str) -> bool {
-        // if guess G gives mask C against answer A, then
-        // guess A should also give mask C against answer G.
-        Correctness::check(word, &self.word, &self.mask)
+        // Check if the guess would be possible to observe when `word` is the correct answer.
+        // This is equivalent to
+        //     Correctness::compute(word, &self.word) == self.mask
+        // without _necessarily_ computing the full mask for the tested word
+        assert_eq!(word.len(), 5);
+        assert_eq!(self.word.len(), 5);
+        let mut used = [false; 5];
+
+        // Check Correct letters
+        for (i, (a, g)) in word.bytes().zip(self.word.bytes()).enumerate() {
+            if a == g {
+                if self.mask[i] != Correctness::Correct {
+                    return false;
+                }
+                used[i] = true;
+            } else if self.mask[i] == Correctness::Correct {
+                return false;
+            }
+        }
+
+        // Check Misplaced letters
+        for (g, e) in self.word.bytes().zip(self.mask.iter()) {
+            if *e == Correctness::Correct {
+                continue;
+            }
+            if Correctness::is_misplaced(g, word, &mut used) != (*e == Correctness::Misplaced) {
+                return false;
+            }
+        }
+
+        // The rest will be all correctly Wrong letters
+        true
     }
 }
 
