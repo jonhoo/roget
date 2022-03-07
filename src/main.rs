@@ -84,3 +84,18 @@ where
     }
     println!("average score: {:.2}", score as f64 / games as f64);
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn first_10_games_with_cutoff() {
+        let w = roget::Wordle::new();
+        let results: Vec<_> = crate::GAMES
+            .split_whitespace()
+            .take(10)
+            .filter_map(|answer| w.play(answer, roget::algorithms::Cutoff::new()))
+            .collect();
+
+        assert_eq!(results, [4, 4, 4, 4, 4, 5, 4, 5, 4, 2]);
+    }
+}
