@@ -24,6 +24,7 @@ enum Implementation {
     Weight,
     Enum,
     Cutoff,
+    Popular,
 }
 
 fn main() {
@@ -54,6 +55,9 @@ fn main() {
         Implementation::Cutoff => {
             play(roget::algorithms::Cutoff::new, args.max);
         }
+        Implementation::Popular => {
+            play(roget::algorithms::Popular::new, args.max);
+        }
     }
 }
 
@@ -74,7 +78,7 @@ where
             eprintln!("failed to guess");
         }
     }
-    println!("average score: {:.2}", score as f64 / games as f64);
+    println!("average score: {:.4}", score as f64 / games as f64);
 }
 
 #[cfg(test)]
