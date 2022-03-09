@@ -11,6 +11,7 @@ struct Args {
     implementation: Implementation,
 
     #[clap(short, long)]
+    /// Number of wordle games to play
     max: Option<usize>,
 }
 
