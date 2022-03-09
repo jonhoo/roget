@@ -55,26 +55,28 @@ impl Guesser for Enumerate {
 
         let mut best: Option<Candidate> = None;
         for &(word, count) in &*self.remaining {
-            let mut totals = [0usize; MAX_MASK_ENUM];
             // considering a world where we _did_ guess `word` and got `pattern` as the
             // correctness. now, compute what _then_ is left.
+
+            // Rather than iterate over the patterns sequentially and add up the counts of words
+            // that result in that pattern, we can instead keep a running total for each pattern
+            // simultaneously by storing them in an array. We can do this since each candidate-word
+            // pair deterministically produces only one mask.
+            let mut totals = [0usize; MAX_MASK_ENUM];
             for (candidate, count) in &*self.remaining {
                 let idx = enumerate_mask(&Correctness::compute(candidate, word));
                 totals[idx] += count;
             }
 
-            debug_assert_eq!(totals.iter().sum::<usize>(), remaining_count, "{}", word);
+            assert_eq!(totals.iter().sum::<usize>(), remaining_count, "{}", word);
 
             let sum: f64 = totals
-                .iter()
+                .into_iter()
+                .filter(|t| *t != 0)
                 .map(|t| {
-                    if *t == 0 {
-                        0.0
-                    } else {
-                        // TODO: apply sigmoid
-                        let p_of_this_pattern = *t as f64 / remaining_count as f64;
-                        p_of_this_pattern * p_of_this_pattern.log2()
-                    }
+                    // TODO: apply sigmoid
+                    let p_of_this_pattern = t as f64 / remaining_count as f64;
+                    p_of_this_pattern * p_of_this_pattern.log2()
                 })
                 .sum();
 
