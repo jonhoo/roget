@@ -205,7 +205,6 @@ mod tests {
             check!("abcdf" + [C C C C C] disallows "abcde");
             check!("abcde" + [W W W W W] allows "fghij");
             check!("abcde" + [M M M M M] allows "eabcd");
-            check!("abcde" + [M M M M M] allows "eabcd");
             check!("baaaa" + [W C M W W] allows "aaccc");
             check!("baaaa" + [W C M W W] disallows "caacc");
         }
