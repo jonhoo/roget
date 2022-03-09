@@ -27,6 +27,7 @@ enum Implementation {
     Sigmoid,
     Escore,
     Popular,
+    Cache,
 }
 
 fn main() {
@@ -65,6 +66,9 @@ fn main() {
         }
         Implementation::Popular => {
             play::<algorithms::Popular>(args.games);
+        }
+        Implementation::Cache => {
+            play::<algorithms::Cache>(args.games);
         }
     }
 }
