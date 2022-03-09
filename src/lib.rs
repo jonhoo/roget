@@ -79,17 +79,24 @@ impl Correctness {
         let mut c = [Correctness::Wrong; 5];
         let answer_bytes = answer.as_bytes();
         let guess_bytes = guess.as_bytes();
+        // Array indexed by lowercase ascii letters
+        let mut misplaced = [0u8; (b'z' - b'a' + 1) as usize];
 
-        for (i, &a) in answer_bytes.iter().enumerate() {
-            if a == guess_bytes[i] {
-                // Mark things green
-                c[i] = Correctness::Correct;
-            } else if let Some(j) = guess_bytes.iter().enumerate().position(|(j, &g)| {
-                // The position in guess can only be marked as Misplaced, if it isn't Correct and wasn't already marked before.
-                a == g && answer_bytes[j] != a && c[j] == Correctness::Wrong
-            }) {
-                // Mark things yellow
-                c[j] = Correctness::Misplaced;
+        // Find all correct letters
+        for ((&answer, &guess), c) in answer_bytes.iter().zip(guess_bytes).zip(c.iter_mut()) {
+            if answer == guess {
+                *c = Correctness::Correct
+            } else {
+                // If the letter does not match, count it as misplaced
+                misplaced[(answer - b'a') as usize] += 1;
+            }
+        }
+        // Check all of the non matching letters if they are misplaced
+        for (&guess, c) in guess_bytes.iter().zip(c.iter_mut()) {
+            // If the letter was guessed wrong and the same letter was counted as misplaced
+            if *c == Correctness::Wrong && misplaced[(guess - b'a') as usize] > 0 {
+                *c = Correctness::Misplaced;
+                misplaced[(guess - b'a') as usize] -= 1;
             }
         }
 
