@@ -7,11 +7,11 @@ const GAMES: &str = include_str!("../answers.txt");
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    #[clap(short, long, arg_enum)]
+    #[clap(short, long, arg_enum, default_value = "cutoff")]
     implementation: Implementation,
 
     #[clap(short, long)]
-    max: Option<usize>,
+    games: Option<usize>,
 }
 
 #[derive(ArgEnum, Debug, Clone, Copy)]
@@ -32,31 +32,31 @@ fn main() {
 
     match args.implementation {
         Implementation::Naive => {
-            play::<algorithms::Naive>(args.max);
+            play::<algorithms::Naive>(args.games);
         }
         Implementation::Allocs => {
-            play::<algorithms::Allocs>(args.max);
+            play::<algorithms::Allocs>(args.games);
         }
         Implementation::Vecrem => {
-            play::<algorithms::Vecrem>(args.max);
+            play::<algorithms::Vecrem>(args.games);
         }
         Implementation::Once => {
-            play::<algorithms::OnceInit>(args.max);
+            play::<algorithms::OnceInit>(args.games);
         }
         Implementation::Precalc => {
-            play::<algorithms::Precalc>(args.max);
+            play::<algorithms::Precalc>(args.games);
         }
         Implementation::Weight => {
-            play::<algorithms::Weight>(args.max);
+            play::<algorithms::Weight>(args.games);
         }
         Implementation::Enum => {
-            play::<algorithms::Enumerate>(args.max);
+            play::<algorithms::Enumerate>(args.games);
         }
         Implementation::Cutoff => {
-            play::<algorithms::Cutoff>(args.max);
+            play::<algorithms::Cutoff>(args.games);
         }
         Implementation::Popular => {
-            play::<algorithms::Popular>(args.max);
+            play::<algorithms::Popular>(args.games);
         }
     }
 }
