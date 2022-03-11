@@ -100,6 +100,6 @@ mod tests {
             .filter_map(|answer| w.play(answer, roget::algorithms::Escore::new()))
             .collect();
 
-        assert_eq!(results, [4, 4, 4, 4, 4, 5, 4, 5, 4, 2]);
+        assert_eq!(results, [4, 3, 4, 4, 3, 4, 4, 3, 4, 3]);
     }
 }
