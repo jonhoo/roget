@@ -21,23 +21,40 @@ impl Default for Escore {
 // entropy remains. It was constructed by iterative regression.
 //
 // First, I logged the observed remaining entropy + remaining guesses with an implementation that
-// just tries to maximize the -sum of the candidates. I then ran that through logistical regression
-// (see `escore-regress.r`). That gave
+// just tries to maximize the -sum of the candidates (entropy-initial.dat). I then ran that through
+// logistical regression (see `escore-regress.r`). That gave
 //
-//   E[guesses] = ln(entropy * 3.996 + 4.121)
+//   E[guesses] = entropy * 0.2592 + 1.3202
+//   E[guesses] = ln(entropy * 4.066 + 3.755)
+//   E[guesses] = e^(entropy * 0.1346 + 0.2210)
+//   E[guesses] = 1/(entropy * -0.07977 + 0.84147)
+//   E[guesses] = (entropy * 0.09177 + 1.13241)^2
+//   E[guesses] = sqrt(entropy * 1.151 + 1.954)
 //
 // and an average score of 3.7631.
 //
-// Then, I ran the E[score] algorithm using the E[guesses] function determined by the first
-// regression, which gave a slightly updated estimate of
+// Then, I ran the E[score] algorithm using the E[guesses] function determined by each of the first
+// regressions, which gave the commented-out scores in the fn body below. I then proceeded with the
+// best candidate (ln), and re-ran the regression on it, which gave
 //
-//   E[guesses] = ln(entropy * 3.264 + 4.834)
+//   E[guesses] = ln(entropy * 3.869 + 3.679)
 //
-// and an average score of 3.7302. Then I took the output of that and ran it through the same
-// regression again, which yielded basically the same estimate, suggesting that the model had
-// stabilized. The regression may be terrible, but it at least does pretty well!
+// and an average score of 3.7176 (worse than the first estimate). Further iterations did not
+// change the parameters much, so I stuck with that last estimat.
+//
+// Below are also the formulas and average scores when using different regressions. Interestingly,
+// the regression that does the best also tends to overestimate the number of guesses remaining,
+// which causes the model to "go for the win" less often, and instead focus on "best information"
+// guesses.
 fn est_steps_left(entropy: f64) -> f64 {
-    (entropy * 3.264 + 4.834).ln()
+    // entropy * 0.2592 + 1.3202 // 3.7181
+    // (entropy * 4.066 + 3.755).ln() // 3.7172
+    // (entropy * 0.1346 + 0.2210).exp() // 3.7237
+    // 1.0 / (entropy * -0.07977 + 0.84147) // 3.7246
+    // (entropy * 0.09177 + 1.13241).powi(2) // 3.7176
+    // (entropy * 1.151 + 1.954).sqrt() // 3.7176
+    // (entropy * 3.869 + 3.679).ln() // 3.7176
+    (entropy * 3.870 + 3.679).ln() // 3.7176
 }
 const PRINT_ESTIMATION: bool = false;
 
@@ -124,7 +141,7 @@ struct Candidate {
 
 impl Guesser for Escore {
     fn guess(&mut self, history: &[Guess]) -> String {
-        let score = history.len() as f64 + 1.0;
+        let score = history.len() as f64;
 
         if let Some(last) = history.last() {
             if matches!(self.remaining, Cow::Owned(_)) {
@@ -189,7 +206,7 @@ impl Guesser for Escore {
 
             let p_word = count as f64 / remaining_p as f64;
             let e_info = -sum;
-            let e_score = p_word * score
+            let e_score = p_word * (score + 1.0)
                 + (1.0 - p_word) * (score + est_steps_left(remaining_entropy - e_info));
             if let Some(c) = best {
                 // Which one gives us a lower (expected) score?
