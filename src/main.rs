@@ -24,6 +24,7 @@ enum Implementation {
     Weight,
     Enum,
     Cutoff,
+    Sigmoid,
     Popular,
 }
 
@@ -54,6 +55,9 @@ fn main() {
         }
         Implementation::Cutoff => {
             play::<algorithms::Cutoff>(args.games);
+        }
+        Implementation::Sigmoid => {
+            play::<algorithms::Sigmoid>(args.games);
         }
         Implementation::Popular => {
             play::<algorithms::Popular>(args.games);
