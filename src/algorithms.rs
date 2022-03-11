@@ -18,3 +18,5 @@ mod popular;
 pub use popular::Popular;
 mod sigmoid;
 pub use sigmoid::Sigmoid;
+mod escore;
+pub use escore::Escore;

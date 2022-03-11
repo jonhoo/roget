@@ -7,7 +7,7 @@ const GAMES: &str = include_str!("../answers.txt");
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    #[clap(short, long, arg_enum, default_value = "cutoff")]
+    #[clap(short, long, arg_enum, default_value = "escore")]
     implementation: Implementation,
 
     #[clap(short, long)]
@@ -25,6 +25,7 @@ enum Implementation {
     Enum,
     Cutoff,
     Sigmoid,
+    Escore,
     Popular,
 }
 
@@ -59,6 +60,9 @@ fn main() {
         Implementation::Sigmoid => {
             play::<algorithms::Sigmoid>(args.games);
         }
+        Implementation::Escore => {
+            play::<algorithms::Escore>(args.games);
+        }
         Implementation::Popular => {
             play::<algorithms::Popular>(args.games);
         }
@@ -77,23 +81,23 @@ where
         if let Some(s) = w.play(answer, guesser) {
             games += 1;
             score += s;
-            println!("guessed '{}' in {}", answer, s);
+            eprintln!("guessed '{}' in {}", answer, s);
         } else {
             eprintln!("failed to guess");
         }
     }
-    println!("average score: {:.4}", score as f64 / games as f64);
+    eprintln!("average score: {:.4}", score as f64 / games as f64);
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn first_10_games_with_cutoff() {
+    fn first_10_games_with_escore() {
         let w = roget::Wordle::new();
         let results: Vec<_> = crate::GAMES
             .split_whitespace()
             .take(10)
-            .filter_map(|answer| w.play(answer, roget::algorithms::Cutoff::new()))
+            .filter_map(|answer| w.play(answer, roget::algorithms::Escore::new()))
             .collect();
 
         assert_eq!(results, [4, 4, 4, 4, 4, 5, 4, 5, 4, 2]);

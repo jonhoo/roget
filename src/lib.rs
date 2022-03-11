@@ -35,6 +35,7 @@ impl Wordle {
         for i in 1..=32 {
             let guess = guesser.guess(&history);
             if guess == answer {
+                guesser.finish(i);
                 return Some(i);
             }
             assert!(
@@ -172,6 +173,7 @@ impl Guess<'_> {
 
 pub trait Guesser {
     fn guess(&mut self, history: &[Guess]) -> String;
+    fn finish(&self, _guesses: usize) {}
 }
 
 impl Guesser for fn(history: &[Guess]) -> String {
