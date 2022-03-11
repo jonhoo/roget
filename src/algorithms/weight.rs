@@ -56,6 +56,7 @@ impl Guesser for Weight {
         let mut best: Option<Candidate> = None;
         for &(word, count) in &*self.remaining {
             let mut sum = 0.0;
+            let mut self_total_count = 0usize;
             for pattern in Correctness::patterns() {
                 // considering a world where we _did_ guess `word` and got `pattern` as the
                 // correctness. now, compute what _then_ is left.
@@ -72,10 +73,15 @@ impl Guesser for Weight {
                 if in_pattern_total == 0 {
                     continue;
                 }
+                self_total_count += in_pattern_total;
+
                 // TODO: apply sigmoid
                 let p_of_this_pattern = in_pattern_total as f64 / remaining_count as f64;
                 sum += p_of_this_pattern * p_of_this_pattern.log2();
             }
+
+            debug_assert_eq!(self_total_count, remaining_count, "{}", word);
+
             let p_word = count as f64 / remaining_count as f64;
             let goodness = p_word * -sum;
             if let Some(c) = best {

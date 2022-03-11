@@ -1,16 +1,14 @@
-use crate::{Correctness, Guess, Guesser, DICTIONARY};
+use crate::{enumerate_mask, Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
 static INITIAL: OnceCell<Vec<(&'static str, usize)>> = OnceCell::new();
-static PATTERNS: OnceCell<Vec<[Correctness; 5]>> = OnceCell::new();
 
-pub struct Prune {
+pub struct Enumerate {
     remaining: Cow<'static, Vec<(&'static str, usize)>>,
-    patterns: Cow<'static, Vec<[Correctness; 5]>>,
 }
 
-impl Prune {
+impl Enumerate {
     pub fn new() -> Self {
         Self {
             remaining: Cow::Borrowed(INITIAL.get_or_init(|| {
@@ -22,7 +20,6 @@ impl Prune {
                     (word, count)
                 }))
             })),
-            patterns: Cow::Borrowed(PATTERNS.get_or_init(|| Correctness::patterns().collect())),
         }
     }
 }
@@ -33,7 +30,7 @@ struct Candidate {
     goodness: f64,
 }
 
-impl Guesser for Prune {
+impl Guesser for Enumerate {
     fn guess(&mut self, history: &[Guess]) -> String {
         if let Some(last) = history.last() {
             if matches!(self.remaining, Cow::Owned(_)) {
@@ -51,50 +48,37 @@ impl Guesser for Prune {
             }
         }
         if history.is_empty() {
-            self.patterns = Cow::Borrowed(PATTERNS.get().unwrap());
             return "tares".to_string();
-        } else {
-            assert!(!self.patterns.is_empty());
         }
 
         let remaining_count: usize = self.remaining.iter().map(|&(_, c)| c).sum();
 
         let mut best: Option<Candidate> = None;
         for &(word, count) in &*self.remaining {
-            let mut sum = 0.0;
-            let check_pattern = |pattern: &[Correctness; 5]| {
-                // considering a world where we _did_ guess `word` and got `pattern` as the
-                // correctness. now, compute what _then_ is left.
-                let mut in_pattern_total = 0;
-                for (candidate, count) in &*self.remaining {
-                    let g = Guess {
-                        word: Cow::Borrowed(word),
-                        mask: *pattern,
-                    };
-                    if g.matches(candidate) {
-                        in_pattern_total += count;
-                    }
-                }
-                if in_pattern_total == 0 {
-                    return false;
-                }
-                // TODO: apply sigmoid
-                let p_of_this_pattern = in_pattern_total as f64 / remaining_count as f64;
-                sum += p_of_this_pattern * p_of_this_pattern.log2();
-                return true;
-            };
+            // considering a world where we _did_ guess `word` and got `pattern` as the
+            // correctness. now, compute what _then_ is left.
 
-            if matches!(self.patterns, Cow::Owned(_)) {
-                self.patterns.to_mut().retain(check_pattern);
-            } else {
-                self.patterns = Cow::Owned(
-                    self.patterns
-                        .iter()
-                        .copied()
-                        .filter(check_pattern)
-                        .collect(),
-                );
+            // Rather than iterate over the patterns sequentially and add up the counts of words
+            // that result in that pattern, we can instead keep a running total for each pattern
+            // simultaneously by storing them in an array. We can do this since each candidate-word
+            // pair deterministically produces only one mask.
+            let mut totals = [0usize; MAX_MASK_ENUM];
+            for (candidate, count) in &*self.remaining {
+                let idx = enumerate_mask(&Correctness::compute(candidate, word));
+                totals[idx] += count;
             }
+
+            assert_eq!(totals.iter().sum::<usize>(), remaining_count, "{}", word);
+
+            let sum: f64 = totals
+                .into_iter()
+                .filter(|t| *t != 0)
+                .map(|t| {
+                    // TODO: apply sigmoid
+                    let p_of_this_pattern = t as f64 / remaining_count as f64;
+                    p_of_this_pattern * p_of_this_pattern.log2()
+                })
+                .sum();
 
             let p_word = count as f64 / remaining_count as f64;
             let goodness = p_word * -sum;

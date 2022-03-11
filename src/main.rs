@@ -22,7 +22,7 @@ enum Implementation {
     Once,
     Precalc,
     Weight,
-    Prune,
+    Enum,
     Cutoff,
     Popular,
 }
@@ -49,8 +49,8 @@ fn main() {
         Implementation::Weight => {
             play(roget::algorithms::Weight::new, args.max);
         }
-        Implementation::Prune => {
-            play(roget::algorithms::Prune::new, args.max);
+        Implementation::Enum => {
+            play(roget::algorithms::Enumerate::new, args.max);
         }
         Implementation::Cutoff => {
             play(roget::algorithms::Cutoff::new, args.max);

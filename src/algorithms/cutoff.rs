@@ -1,4 +1,4 @@
-use crate::{Correctness, Guess, Guesser, DICTIONARY};
+use crate::{enumerate_mask, Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
@@ -66,39 +66,30 @@ impl Guesser for Cutoff {
         let mut i = 0;
         let stop = (self.remaining.len() / 3).max(20);
         for &(word, count) in &*self.remaining {
-            let mut sum = 0.0;
-            let check_pattern = |pattern: &[Correctness; 5]| {
-                // considering a world where we _did_ guess `word` and got `pattern` as the
-                // correctness. now, compute what _then_ is left.
-                let mut in_pattern_total = 0;
-                let g = Guess {
-                    word: Cow::Borrowed(word),
-                    mask: *pattern,
-                };
-                for (candidate, count) in &*self.remaining {
-                    if g.matches(candidate) {
-                        in_pattern_total += count;
-                    }
-                }
-                if in_pattern_total == 0 {
-                    return false;
-                }
-                let p_of_this_pattern = in_pattern_total as f64 / remaining_count as f64;
-                sum += p_of_this_pattern * p_of_this_pattern.log2();
-                return true;
-            };
+            // considering a world where we _did_ guess `word` and got `pattern` as the
+            // correctness. now, compute what _then_ is left.
 
-            if matches!(self.patterns, Cow::Owned(_)) {
-                self.patterns.to_mut().retain(check_pattern);
-            } else {
-                self.patterns = Cow::Owned(
-                    self.patterns
-                        .iter()
-                        .copied()
-                        .filter(check_pattern)
-                        .collect(),
-                );
+            // Rather than iterate over the patterns sequentially and add up the counts of words
+            // that result in that pattern, we can instead keep a running total for each pattern
+            // simultaneously by storing them in an array. We can do this since each candidate-word
+            // pair deterministically produces only one mask.
+            let mut totals = [0usize; MAX_MASK_ENUM];
+            for (candidate, count) in &*self.remaining {
+                let idx = enumerate_mask(&Correctness::compute(candidate, word));
+                totals[idx] += count;
             }
+
+            assert_eq!(totals.iter().sum::<usize>(), remaining_count, "{}", word);
+
+            let sum: f64 = totals
+                .into_iter()
+                .filter(|t| *t != 0)
+                .map(|t| {
+                    // TODO: apply sigmoid
+                    let p_of_this_pattern = t as f64 / remaining_count as f64;
+                    p_of_this_pattern * p_of_this_pattern.log2()
+                })
+                .sum();
 
             let p_word = count as f64 / remaining_count as f64;
             let entropy = -sum;

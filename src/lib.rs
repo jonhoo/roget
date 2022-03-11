@@ -99,6 +99,19 @@ impl Correctness {
     }
 }
 
+pub fn enumerate_mask(c: &[Correctness; 5]) -> usize {
+    c.iter().fold(0, |acc, c| {
+        acc * 3
+            + match c {
+                Correctness::Correct => 0,
+                Correctness::Misplaced => 1,
+                Correctness::Wrong => 2,
+            }
+    })
+}
+
+pub const MAX_MASK_ENUM: usize = 3 * 3 * 3 * 3 * 3;
+
 pub struct Guess<'a> {
     pub word: Cow<'a, str>,
     pub mask: [Correctness; 5],
