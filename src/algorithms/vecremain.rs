@@ -5,6 +5,12 @@ pub struct Vecrem {
     remaining: Vec<(&'static str, usize)>,
 }
 
+impl Default for Vecrem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Vecrem {
     pub fn new() -> Self {
         Self {

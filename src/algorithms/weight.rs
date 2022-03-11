@@ -8,6 +8,12 @@ pub struct Weight {
     remaining: Cow<'static, Vec<(&'static str, usize)>>,
 }
 
+impl Default for Weight {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Weight {
     pub fn new() -> Self {
         Self {

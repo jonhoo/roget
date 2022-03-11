@@ -10,6 +10,12 @@ pub struct Cutoff {
     patterns: Cow<'static, Vec<[Correctness; 5]>>,
 }
 
+impl Default for Cutoff {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Cutoff {
     pub fn new() -> Self {
         Self {

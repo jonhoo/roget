@@ -1,5 +1,5 @@
 use clap::{ArgEnum, Parser};
-use roget::Guesser;
+use roget::{algorithms, Guesser};
 
 const GAMES: &str = include_str!("../answers.txt");
 
@@ -32,44 +32,44 @@ fn main() {
 
     match args.implementation {
         Implementation::Naive => {
-            play(roget::algorithms::Naive::new, args.max);
+            play::<algorithms::Naive>(args.max);
         }
         Implementation::Allocs => {
-            play(roget::algorithms::Allocs::new, args.max);
+            play::<algorithms::Allocs>(args.max);
         }
         Implementation::Vecrem => {
-            play(roget::algorithms::Vecrem::new, args.max);
+            play::<algorithms::Vecrem>(args.max);
         }
         Implementation::Once => {
-            play(roget::algorithms::OnceInit::new, args.max);
+            play::<algorithms::OnceInit>(args.max);
         }
         Implementation::Precalc => {
-            play(roget::algorithms::Precalc::new, args.max);
+            play::<algorithms::Precalc>(args.max);
         }
         Implementation::Weight => {
-            play(roget::algorithms::Weight::new, args.max);
+            play::<algorithms::Weight>(args.max);
         }
         Implementation::Enum => {
-            play(roget::algorithms::Enumerate::new, args.max);
+            play::<algorithms::Enumerate>(args.max);
         }
         Implementation::Cutoff => {
-            play(roget::algorithms::Cutoff::new, args.max);
+            play::<algorithms::Cutoff>(args.max);
         }
         Implementation::Popular => {
-            play(roget::algorithms::Popular::new, args.max);
+            play::<algorithms::Popular>(args.max);
         }
     }
 }
 
-fn play<G>(mut mk: impl FnMut() -> G, max: Option<usize>)
+fn play<G>(max: Option<usize>)
 where
-    G: Guesser,
+    G: Guesser + Default,
 {
     let w = roget::Wordle::new();
     let mut score = 0;
     let mut games = 0;
     for answer in GAMES.split_whitespace().take(max.unwrap_or(usize::MAX)) {
-        let guesser = (mk)();
+        let guesser = G::default();
         if let Some(s) = w.play(answer, guesser) {
             games += 1;
             score += s;

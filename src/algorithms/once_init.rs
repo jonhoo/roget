@@ -8,6 +8,12 @@ pub struct OnceInit {
     remaining: Cow<'static, Vec<(&'static str, usize)>>,
 }
 
+impl Default for OnceInit {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OnceInit {
     pub fn new() -> Self {
         Self {

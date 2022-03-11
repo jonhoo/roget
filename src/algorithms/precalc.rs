@@ -11,6 +11,12 @@ pub struct Precalc {
     remaining: Cow<'static, Vec<(&'static str, usize)>>,
 }
 
+impl Default for Precalc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Precalc {
     pub fn new() -> Self {
         Self {

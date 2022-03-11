@@ -10,6 +10,12 @@ pub struct Popular {
     remaining: Cow<'static, Vec<(&'static str, usize)>>,
 }
 
+impl Default for Popular {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Popular {
     pub fn new() -> Self {
         Self {

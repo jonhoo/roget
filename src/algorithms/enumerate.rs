@@ -8,6 +8,12 @@ pub struct Enumerate {
     remaining: Cow<'static, Vec<(&'static str, usize)>>,
 }
 
+impl Default for Enumerate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Enumerate {
     pub fn new() -> Self {
         Self {
