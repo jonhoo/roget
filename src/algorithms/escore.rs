@@ -143,6 +143,8 @@ impl Guesser for Escore {
         }
         if history.is_empty() {
             self.patterns = Cow::Borrowed(PATTERNS.get().unwrap());
+            // NOTE: I did a manual run with this commented out and it indeed produced "tares" as
+            // the first guess. It slows down the run by a lot though.
             return "tares".to_string();
         } else {
             assert!(!self.patterns.is_empty());
