@@ -56,8 +56,8 @@ impl Sigmoid {
                 let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
 
                 if PRINT_SIGMOID {
-                    for (word, count) in DICTIONARY.into_iter().rev() {
-                        let p = count as f64 / sum as f64;
+                    for (word, count) in DICTIONARY.iter().rev() {
+                        let p = *count as f64 / sum as f64;
                         println!(
                             "{} {:.6}% -> {:.6}% ({})",
                             word,
@@ -68,13 +68,11 @@ impl Sigmoid {
                     }
                 }
 
-                let mut words: Vec<_> = Vec::with_capacity(DICTIONARY.len());
-                words.extend(
-                    DICTIONARY
-                        .into_iter()
-                        .map(|(word, count)| (word, sigmoid(count as f64 / sum as f64))),
-                );
-                words
+                DICTIONARY
+                    .iter()
+                    .copied()
+                    .map(|(word, count)| (word, sigmoid(count as f64 / sum as f64)))
+                    .collect()
             })),
             patterns: Cow::Borrowed(PATTERNS.get_or_init(|| Correctness::patterns().collect())),
         }
