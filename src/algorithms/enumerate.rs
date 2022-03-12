@@ -17,15 +17,7 @@ impl Default for Enumerate {
 impl Enumerate {
     pub fn new() -> Self {
         Self {
-            remaining: Cow::Borrowed(INITIAL.get_or_init(|| {
-                Vec::from_iter(DICTIONARY.lines().map(|line| {
-                    let (word, count) = line
-                        .split_once(' ')
-                        .expect("every line is word + space + frequency");
-                    let count: usize = count.parse().expect("every count is a number");
-                    (word, count)
-                }))
-            })),
+            remaining: Cow::Borrowed(INITIAL.get_or_init(|| DICTIONARY.to_vec())),
         }
     }
 }

@@ -95,20 +95,10 @@ impl Escore {
     pub fn new() -> Self {
         Self {
             remaining: Cow::Borrowed(INITIAL.get_or_init(|| {
-                let mut sum = 0;
-                let mut words = Vec::from_iter(DICTIONARY.lines().map(|line| {
-                    let (word, count) = line
-                        .split_once(' ')
-                        .expect("every line is word + space + frequency");
-                    let count: usize = count.parse().expect("every count is a number");
-                    sum += count;
-                    (word, count)
-                }));
-
-                words.sort_unstable_by_key(|&(_, count)| std::cmp::Reverse(count));
+                let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
 
                 if PRINT_SIGMOID {
-                    for &(word, count) in words.iter().rev() {
+                    for (word, count) in DICTIONARY.into_iter().rev() {
                         let p = count as f64 / sum as f64;
                         println!(
                             "{} {:.6}% -> {:.6}% ({})",
@@ -120,7 +110,7 @@ impl Escore {
                     }
                 }
 
-                let words: Vec<_> = words
+                let words: Vec<_> = DICTIONARY
                     .into_iter()
                     .map(|(word, count)| (word, sigmoid(count as f64 / sum as f64)))
                     .collect();

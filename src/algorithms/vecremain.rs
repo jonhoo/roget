@@ -14,13 +14,7 @@ impl Default for Vecrem {
 impl Vecrem {
     pub fn new() -> Self {
         Self {
-            remaining: Vec::from_iter(DICTIONARY.lines().map(|line| {
-                let (word, count) = line
-                    .split_once(' ')
-                    .expect("every line is word + space + frequency");
-                let count: usize = count.parse().expect("every count is a number");
-                (word, count)
-            })),
+            remaining: DICTIONARY.to_vec(),
         }
     }
 }

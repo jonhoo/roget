@@ -19,7 +19,6 @@ enum Implementation {
     Naive,
     Allocs,
     Vecrem,
-    Once,
     Precalc,
     Weight,
     Enum,
@@ -41,9 +40,6 @@ fn main() {
         }
         Implementation::Vecrem => {
             play::<algorithms::Vecrem>(args.games);
-        }
-        Implementation::Once => {
-            play::<algorithms::OnceInit>(args.games);
         }
         Implementation::Precalc => {
             play::<algorithms::Precalc>(args.games);

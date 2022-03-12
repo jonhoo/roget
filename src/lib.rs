@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::HashSet};
 
 pub mod algorithms;
 
-const DICTIONARY: &str = include_str!("../dictionary.txt");
+include!(concat!(env!("OUT_DIR"), "/dictionary.rs"));
 
 pub struct Wordle {
     dictionary: HashSet<&'static str>,
@@ -20,11 +20,7 @@ impl Default for Wordle {
 impl Wordle {
     pub fn new() -> Self {
         Self {
-            dictionary: HashSet::from_iter(DICTIONARY.lines().map(|line| {
-                line.split_once(' ')
-                    .expect("every line is word + space + frequency")
-                    .0
-            })),
+            dictionary: HashSet::from_iter(DICTIONARY.into_iter().map(|(word, _)| word)),
         }
     }
 
