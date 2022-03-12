@@ -68,11 +68,12 @@ impl Sigmoid {
                     }
                 }
 
-                let words: Vec<_> = DICTIONARY
-                    .into_iter()
-                    .map(|(word, count)| (word, sigmoid(count as f64 / sum as f64)))
-                    .collect();
-
+                let mut words: Vec<_> = Vec::with_capacity(DICTIONARY.len());
+                words.extend(
+                    DICTIONARY
+                        .into_iter()
+                        .map(|(word, count)| (word, sigmoid(count as f64 / sum as f64))),
+                );
                 words
             })),
             patterns: Cow::Borrowed(PATTERNS.get_or_init(|| Correctness::patterns().collect())),
