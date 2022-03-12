@@ -76,15 +76,33 @@ where
     let w = roget::Wordle::new();
     let mut score = 0;
     let mut games = 0;
+    let mut histogram = Vec::new();
     for answer in GAMES.split_whitespace().take(max.unwrap_or(usize::MAX)) {
         let guesser = G::default();
         if let Some(s) = w.play(answer, guesser) {
             games += 1;
             score += s;
-            eprintln!("guessed '{}' in {}", answer, s);
+            if s >= histogram.len() {
+                histogram.extend(std::iter::repeat(0).take(s - histogram.len() + 1));
+            }
+            histogram[s] += 1;
+            // eprintln!("guessed '{}' in {}", answer, s);
         } else {
-            eprintln!("failed to guess");
+            eprintln!("failed to guess '{}'", answer);
         }
+    }
+    let sum: usize = histogram.iter().sum();
+    for (score, count) in histogram.into_iter().enumerate().skip(1) {
+        let frac = count as f64 / sum as f64;
+        let w1 = (30.0 * frac).round() as usize;
+        let w2 = (30.0 * (1.0 - frac)).round() as usize;
+        eprintln!(
+            "{:>2}: {}{} ({})",
+            score,
+            std::iter::repeat('#').take(w1).collect::<String>(),
+            std::iter::repeat(' ').take(w2).collect::<String>(),
+            count
+        );
     }
     eprintln!("average score: {:.4}", score as f64 / games as f64);
 }
