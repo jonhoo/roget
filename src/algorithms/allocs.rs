@@ -14,7 +14,7 @@ impl Default for Allocs {
 impl Allocs {
     pub fn new() -> Self {
         Self {
-            remaining: HashMap::from_iter(DICTIONARY.into_iter()),
+            remaining: HashMap::from_iter(DICTIONARY.iter().copied()),
         }
     }
 }

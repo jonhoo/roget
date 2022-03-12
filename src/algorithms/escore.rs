@@ -98,8 +98,8 @@ impl Escore {
                 let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
 
                 if PRINT_SIGMOID {
-                    for (word, count) in DICTIONARY.into_iter().rev() {
-                        let p = count as f64 / sum as f64;
+                    for (word, count) in DICTIONARY.iter().rev() {
+                        let p = *count as f64 / sum as f64;
                         println!(
                             "{} {:.6}% -> {:.6}% ({})",
                             word,
@@ -110,12 +110,11 @@ impl Escore {
                     }
                 }
 
-                let words: Vec<_> = DICTIONARY
-                    .into_iter()
+                DICTIONARY
+                    .iter()
+                    .copied()
                     .map(|(word, count)| (word, sigmoid(count as f64 / sum as f64)))
-                    .collect();
-
-                words
+                    .collect()
             })),
             patterns: Cow::Borrowed(PATTERNS.get_or_init(|| Correctness::patterns().collect())),
             entropy: Vec::new(),
