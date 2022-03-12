@@ -99,8 +99,8 @@ where
         eprintln!(
             "{:>2}: {}{} ({})",
             score,
-            std::iter::repeat('#').take(w1).collect::<String>(),
-            std::iter::repeat(' ').take(w2).collect::<String>(),
+            "#".repeat(w1),
+            " ".repeat(w2),
             count
         );
     }
