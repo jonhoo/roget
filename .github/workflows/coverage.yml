@@ -11,6 +11,8 @@ jobs:
       options: --security-opt seccomp=unconfined
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: true
       - name: Generate code coverage
         run: |
           cargo tarpaulin --verbose --all-features --timeout 120 --out Xml

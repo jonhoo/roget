@@ -74,7 +74,7 @@ impl Correctness {
         })
     }
 
-    fn compute(answer: &str, guess: &str) -> [Self; 5] {
+    pub fn compute(answer: &str, guess: &str) -> [Self; 5] {
         assert_eq!(answer.len(), 5);
         assert_eq!(guess.len(), 5);
         let mut c = [Correctness::Wrong; 5];
@@ -243,6 +243,12 @@ mod tests {
         #[test]
         fn from_crash() {
             check!("tares" + [W M M W W] disallows "brink");
+        }
+
+        #[test]
+        fn from_yukosgiti() {
+            check!("aaaab" + [C C C W M] allows "aaabc");
+            check!("aaabc" + [C C C M W] allows "aaaab");
         }
 
         #[test]
