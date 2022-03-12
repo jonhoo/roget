@@ -104,6 +104,17 @@ impl Correctness {
         c
     }
 
+    pub fn pack(c: &[Correctness; 5]) -> usize {
+        c.iter().fold(0, |acc, c| {
+            acc * 3
+                + match c {
+                    Correctness::Correct => 0,
+                    Correctness::Misplaced => 1,
+                    Correctness::Wrong => 2,
+                }
+        })
+    }
+
     pub fn patterns() -> impl Iterator<Item = [Self; 5]> {
         itertools::iproduct!(
             [Self::Correct, Self::Misplaced, Self::Wrong],
@@ -114,17 +125,6 @@ impl Correctness {
         )
         .map(|(a, b, c, d, e)| [a, b, c, d, e])
     }
-}
-
-pub fn enumerate_mask(c: &[Correctness; 5]) -> usize {
-    c.iter().fold(0, |acc, c| {
-        acc * 3
-            + match c {
-                Correctness::Correct => 0,
-                Correctness::Misplaced => 1,
-                Correctness::Wrong => 2,
-            }
-    })
 }
 
 pub const MAX_MASK_ENUM: usize = 3 * 3 * 3 * 3 * 3;

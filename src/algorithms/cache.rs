@@ -1,4 +1,4 @@
-use crate::{enumerate_mask, Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
+use crate::{Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
@@ -144,11 +144,7 @@ impl Cache {
     }
 }
 
-fn cachable_enumeration(answer: &str, guess: &str) -> u8 {
-    enumerate_mask(&Correctness::compute(answer, guess)) as u8
-}
-
-fn get_row(
+fn packed_correctness_for(
     computes: &'static (usize, Vec<OnceCell<u8>>),
     guess_idx: usize,
 ) -> &'static [OnceCell<u8>] {
@@ -158,8 +154,13 @@ fn get_row(
     &vec[start..end]
 }
 
-fn get_enumeration(row: &[OnceCell<u8>], answer: &str, guess: &str, guess_idx: usize) -> u8 {
-    *row[guess_idx].get_or_init(|| cachable_enumeration(guess, &answer))
+fn get_correctness_packed(
+    row: &[OnceCell<u8>],
+    guess: &str,
+    answer: &str,
+    answer_idx: usize,
+) -> u8 {
+    *row[answer_idx].get_or_init(|| Correctness::pack(&Correctness::compute(answer, guess)) as u8)
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -173,24 +174,24 @@ impl Guesser for Cache {
         let score = history.len() as f64;
 
         if let Some(last) = history.last() {
-            let reference = enumerate_mask(&last.mask) as u8;
+            let reference = Correctness::pack(&last.mask) as u8;
             let last_idx = self
                 .remaining
                 .iter()
                 .find(|(word, _, _)| &*last.word == *word)
                 .unwrap()
                 .2;
-            let row = get_row(self.computes, last_idx);
+            let row = packed_correctness_for(self.computes, last_idx);
             if matches!(self.remaining, Cow::Owned(_)) {
                 self.remaining.to_mut().retain(|(word, _, word_idx)| {
-                    reference == get_enumeration(row, &last.word, word, *word_idx)
+                    reference == get_correctness_packed(row, &last.word, word, *word_idx)
                 });
             } else {
                 self.remaining = Cow::Owned(
                     self.remaining
                         .iter()
                         .filter(|(word, _, word_idx)| {
-                            reference == get_enumeration(row, &last.word, word, *word_idx)
+                            reference == get_correctness_packed(row, &last.word, word, *word_idx)
                         })
                         .copied()
                         .collect(),
@@ -229,9 +230,9 @@ impl Guesser for Cache {
             // simultaneously by storing them in an array. We can do this since each candidate-word
             // pair deterministically produces only one mask.
             let mut totals = [0.0f64; MAX_MASK_ENUM];
-            let row = get_row(self.computes, word_idx);
+            let row = packed_correctness_for(self.computes, word_idx);
             for (candidate, count, candidate_idx) in &*self.remaining {
-                let idx = get_enumeration(row, &word, candidate, *candidate_idx);
+                let idx = get_correctness_packed(row, word, candidate, *candidate_idx);
                 totals[idx as usize] += count;
             }
 
