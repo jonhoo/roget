@@ -149,6 +149,7 @@ impl Cache {
     }
 }
 
+#[inline]
 fn get_correctness_packed(
     row: &[Cell<Option<CacheValue>>],
     guess: &str,
