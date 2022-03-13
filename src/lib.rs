@@ -100,7 +100,7 @@ impl Correctness {
         c
     }
 
-    pub fn pack(c: &[Correctness; 5]) -> usize {
+    pub fn pack(c: &[Correctness; 5]) -> u8 {
         c.iter().fold(0, |acc, c| {
             acc * 3
                 + match c {

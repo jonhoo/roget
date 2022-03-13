@@ -160,7 +160,7 @@ fn get_correctness_packed(
     match cell.get() {
         Some(a) => a.get(),
         None => {
-            let correctness = Correctness::pack(&Correctness::compute(answer, guess)) as u8;
+            let correctness = Correctness::pack(&Correctness::compute(answer, guess));
             cell.set(Some(CacheValue::new(correctness)));
             correctness
         }
@@ -178,7 +178,7 @@ impl Guesser for Cache {
         let score = history.len() as f64;
 
         if let Some(last) = history.last() {
-            let reference = Correctness::pack(&last.mask) as u8;
+            let reference = Correctness::pack(&last.mask);
             let last_idx = self
                 .remaining
                 .iter()
