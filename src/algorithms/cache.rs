@@ -1,5 +1,6 @@
 use crate::{Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
+use once_cell::unsync::OnceCell as UnSyncOnceCell;
 use std::borrow::Cow;
 use std::cell::Cell;
 use std::num::NonZeroU8;
@@ -24,7 +25,7 @@ const NUM_WORDS: usize = DICTIONARY.len();
 const CELL: Cell<Option<CacheValue>> = Cell::new(None);
 const ROW: [Cell<Option<CacheValue>>; NUM_WORDS] = [CELL; NUM_WORDS];
 thread_local! {
-    static COMPUTES: [[Cell<Option<CacheValue>>; NUM_WORDS]; NUM_WORDS] = [ROW; NUM_WORDS];
+    static COMPUTES: UnSyncOnceCell<Box<[[Cell<Option<CacheValue>>; NUM_WORDS]]>> = Default::default();
 }
 
 pub struct Cache {
@@ -141,6 +142,13 @@ impl Cache {
             words
         }));
 
+        COMPUTES.with(|c| {
+            c.get_or_init(|| {
+                let vec = vec![ROW; NUM_WORDS];
+                vec.into_boxed_slice()
+            });
+        });
+
         Self {
             remaining,
             patterns: Cow::Borrowed(PATTERNS.get_or_init(|| Correctness::patterns().collect())),
@@ -186,7 +194,7 @@ impl Guesser for Cache {
                 .unwrap()
                 .2;
             COMPUTES.with(|c| {
-                let row = &c[last_idx];
+                let row = &c.get().unwrap()[last_idx];
                 if matches!(self.remaining, Cow::Owned(_)) {
                     self.remaining.to_mut().retain(|(word, _, word_idx)| {
                         reference == get_correctness_packed(row, &last.word, word, *word_idx)
@@ -239,7 +247,7 @@ impl Guesser for Cache {
             let mut totals = [0.0f64; MAX_MASK_ENUM];
 
             COMPUTES.with(|c| {
-                let row = &c[word_idx];
+                let row = &c.get().unwrap()[word_idx];
                 for (candidate, count, candidate_idx) in &*self.remaining {
                     let idx = get_correctness_packed(row, word, candidate, *candidate_idx);
                     totals[idx as usize] += count;
