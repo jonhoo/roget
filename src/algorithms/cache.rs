@@ -2,15 +2,29 @@ use crate::{Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 use std::cell::Cell;
+use std::num::NonZeroU8;
 
 static INITIAL: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
 static PATTERNS: OnceCell<Vec<[Correctness; 5]>> = OnceCell::new();
 
+#[derive(Copy, Clone)]
+struct CacheValue(NonZeroU8);
+
+impl CacheValue {
+    fn new(val: u8) -> Self {
+        Self(NonZeroU8::new(val.wrapping_add(1)).unwrap())
+    }
+
+    fn get(&self) -> u8 {
+        self.0.get() - 1
+    }
+}
+
 const NUM_WORDS: usize = DICTIONARY.len();
-const CELL: Cell<Option<u8>> = Cell::new(None);
-const ROW: [Cell<Option<u8>>; NUM_WORDS] = [CELL; NUM_WORDS];
+const CELL: Cell<Option<CacheValue>> = Cell::new(None);
+const ROW: [Cell<Option<CacheValue>>; NUM_WORDS] = [CELL; NUM_WORDS];
 thread_local! {
-    static COMPUTES: [[Cell<Option<u8>>; NUM_WORDS]; NUM_WORDS] = [ROW; NUM_WORDS];
+    static COMPUTES: [[Cell<Option<CacheValue>>; NUM_WORDS]; NUM_WORDS] = [ROW; NUM_WORDS];
 }
 
 pub struct Cache {
@@ -136,17 +150,17 @@ impl Cache {
 }
 
 fn get_correctness_packed(
-    row: &[Cell<Option<u8>>],
+    row: &[Cell<Option<CacheValue>>],
     guess: &str,
     answer: &str,
     answer_idx: usize,
 ) -> u8 {
     let cell = &row[answer_idx];
     match cell.get() {
-        Some(a) => a,
+        Some(a) => a.get(),
         None => {
             let correctness = Correctness::pack(&Correctness::compute(answer, guess)) as u8;
-            cell.set(Some(correctness));
+            cell.set(Some(CacheValue::new(correctness)));
             correctness
         }
     }
