@@ -1,18 +1,22 @@
 use crate::{Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
+use std::cell::Cell;
 
 static INITIAL: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
 static PATTERNS: OnceCell<Vec<[Correctness; 5]>> = OnceCell::new();
 
-// Attempted to use vec of vecs for compute cache, but was much slower
-static COMPUTES: OnceCell<(usize, Vec<OnceCell<u8>>)> = OnceCell::new();
+const NUM_WORDS: usize = DICTIONARY.len();
+const CELL: Cell<Option<u8>> = Cell::new(None);
+const ROW: [Cell<Option<u8>>; NUM_WORDS] = [CELL; NUM_WORDS];
+thread_local! {
+    static COMPUTES: [[Cell<Option<u8>>; NUM_WORDS]; NUM_WORDS] = [ROW; NUM_WORDS];
+}
 
 pub struct Cache {
     remaining: Cow<'static, Vec<(&'static str, f64, usize)>>,
     patterns: Cow<'static, Vec<[Correctness; 5]>>,
     entropy: Vec<f64>,
-    computes: &'static (usize, Vec<OnceCell<u8>>),
 }
 
 impl Default for Cache {
@@ -123,35 +127,29 @@ impl Cache {
             words
         }));
 
-        let dimension = remaining.len();
-
         Self {
             remaining,
             patterns: Cow::Borrowed(PATTERNS.get_or_init(|| Correctness::patterns().collect())),
             entropy: Vec::new(),
-            computes: COMPUTES
-                .get_or_init(|| (dimension, vec![Default::default(); dimension * dimension])),
         }
     }
 }
 
-fn packed_correctness_for(
-    computes: &'static (usize, Vec<OnceCell<u8>>),
-    guess_idx: usize,
-) -> &'static [OnceCell<u8>] {
-    let (dimension, vec) = computes;
-    let start = guess_idx * dimension;
-    let end = start + dimension;
-    &vec[start..end]
-}
-
 fn get_correctness_packed(
-    row: &[OnceCell<u8>],
+    row: &[Cell<Option<u8>>],
     guess: &str,
     answer: &str,
     answer_idx: usize,
 ) -> u8 {
-    *row[answer_idx].get_or_init(|| Correctness::pack(&Correctness::compute(answer, guess)) as u8)
+    let cell = &row[answer_idx];
+    match cell.get() {
+        Some(a) => a,
+        None => {
+            let correctness = Correctness::pack(&Correctness::compute(answer, guess)) as u8;
+            cell.set(Some(correctness));
+            correctness
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -172,22 +170,25 @@ impl Guesser for Cache {
                 .find(|(word, _, _)| &*last.word == *word)
                 .unwrap()
                 .2;
-            let row = packed_correctness_for(self.computes, last_idx);
-            if matches!(self.remaining, Cow::Owned(_)) {
-                self.remaining.to_mut().retain(|(word, _, word_idx)| {
-                    reference == get_correctness_packed(row, &last.word, word, *word_idx)
-                });
-            } else {
-                self.remaining = Cow::Owned(
-                    self.remaining
-                        .iter()
-                        .filter(|(word, _, word_idx)| {
-                            reference == get_correctness_packed(row, &last.word, word, *word_idx)
-                        })
-                        .copied()
-                        .collect(),
-                );
-            }
+            COMPUTES.with(|c| {
+                let row = &c[last_idx];
+                if matches!(self.remaining, Cow::Owned(_)) {
+                    self.remaining.to_mut().retain(|(word, _, word_idx)| {
+                        reference == get_correctness_packed(row, &last.word, word, *word_idx)
+                    });
+                } else {
+                    self.remaining = Cow::Owned(
+                        self.remaining
+                            .iter()
+                            .filter(|(word, _, word_idx)| {
+                                reference
+                                    == get_correctness_packed(row, &last.word, word, *word_idx)
+                            })
+                            .copied()
+                            .collect(),
+                    );
+                }
+            });
         }
         if history.is_empty() {
             self.patterns = Cow::Borrowed(PATTERNS.get().unwrap());
@@ -221,11 +222,14 @@ impl Guesser for Cache {
             // simultaneously by storing them in an array. We can do this since each candidate-word
             // pair deterministically produces only one mask.
             let mut totals = [0.0f64; MAX_MASK_ENUM];
-            let row = packed_correctness_for(self.computes, word_idx);
-            for (candidate, count, candidate_idx) in &*self.remaining {
-                let idx = get_correctness_packed(row, word, candidate, *candidate_idx);
-                totals[idx as usize] += count;
-            }
+
+            COMPUTES.with(|c| {
+                let row = &c[word_idx];
+                for (candidate, count, candidate_idx) in &*self.remaining {
+                    let idx = get_correctness_packed(row, word, candidate, *candidate_idx);
+                    totals[idx as usize] += count;
+                }
+            });
 
             let sum: f64 = totals
                 .into_iter()
