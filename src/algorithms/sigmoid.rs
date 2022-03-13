@@ -125,7 +125,7 @@ impl Guesser for Sigmoid {
             let mut totals = [0.0f64; MAX_MASK_ENUM];
             for (candidate, count) in &*self.remaining {
                 let idx = Correctness::pack(&Correctness::compute(candidate, word));
-                totals[idx as usize] += count;
+                totals[usize::from(idx)] += count;
             }
 
             let sum: f64 = totals

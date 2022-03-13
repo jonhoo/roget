@@ -71,7 +71,7 @@ impl Guesser for Cutoff {
             let mut totals = [0usize; MAX_MASK_ENUM];
             for (candidate, count) in &*self.remaining {
                 let idx = Correctness::pack(&Correctness::compute(candidate, word));
-                totals[idx as usize] += count;
+                totals[usize::from(idx)] += count;
             }
 
             assert_eq!(totals.iter().sum::<usize>(), remaining_count, "{}", word);

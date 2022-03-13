@@ -250,7 +250,7 @@ impl Guesser for Cache {
                 let row = &c.get().unwrap()[word_idx];
                 for (candidate, count, candidate_idx) in &*self.remaining {
                     let idx = get_correctness_packed(row, word, candidate, *candidate_idx);
-                    totals[idx as usize] += count;
+                    totals[usize::from(idx)] += count;
                 }
             });
 
