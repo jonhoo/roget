@@ -20,17 +20,7 @@ impl Default for Precalc {
 impl Precalc {
     pub fn new() -> Self {
         Self {
-            remaining: Cow::Borrowed(INITIAL.get_or_init(|| {
-                let mut words = Vec::from_iter(DICTIONARY.lines().map(|line| {
-                    let (word, count) = line
-                        .split_once(' ')
-                        .expect("every line is word + space + frequency");
-                    let count: usize = count.parse().expect("every count is a number");
-                    (word, count)
-                }));
-                words.sort_unstable_by_key(|&(_, count)| std::cmp::Reverse(count));
-                words
-            })),
+            remaining: Cow::Borrowed(INITIAL.get_or_init(|| DICTIONARY.to_vec())),
         }
     }
 }

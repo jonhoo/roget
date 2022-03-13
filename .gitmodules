@@ -1,0 +1,3 @@
+[submodule "wordle-tests"]
+	path = wordle-tests
+	url = https://github.com/yukosgiti/wordle-tests.git

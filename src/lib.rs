@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::HashSet};
 
 pub mod algorithms;
 
-const DICTIONARY: &str = include_str!("../dictionary.txt");
+include!(concat!(env!("OUT_DIR"), "/dictionary.rs"));
 
 pub struct Wordle {
     dictionary: HashSet<&'static str>,
@@ -20,11 +20,7 @@ impl Default for Wordle {
 impl Wordle {
     pub fn new() -> Self {
         Self {
-            dictionary: HashSet::from_iter(DICTIONARY.lines().map(|line| {
-                line.split_once(' ')
-                    .expect("every line is word + space + frequency")
-                    .0
-            })),
+            dictionary: HashSet::from_iter(DICTIONARY.iter().copied().map(|(word, _)| word)),
         }
     }
 
@@ -74,7 +70,7 @@ impl Correctness {
         })
     }
 
-    fn compute(answer: &str, guess: &str) -> [Self; 5] {
+    pub fn compute(answer: &str, guess: &str) -> [Self; 5] {
         assert_eq!(answer.len(), 5);
         assert_eq!(guess.len(), 5);
         let mut c = [Correctness::Wrong; 5];
@@ -243,6 +239,12 @@ mod tests {
         #[test]
         fn from_crash() {
             check!("tares" + [W M M W W] disallows "brink");
+        }
+
+        #[test]
+        fn from_yukosgiti() {
+            check!("aaaab" + [C C C W M] allows "aaabc");
+            check!("aaabc" + [C C C M W] allows "aaaab");
         }
 
         #[test]
