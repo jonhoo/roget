@@ -16,14 +16,14 @@ fn main() {
     }));
     words.sort_unstable_by_key(|&(_, count)| std::cmp::Reverse(count));
 
-    write!(
+    writeln!(
         f,
-        "pub const DICTIONARY: [(&str, usize); {}] = [\n",
+        "pub const DICTIONARY: [(&str, usize); {}] = [",
         words.len()
     )
     .unwrap();
     for (word, count) in words {
-        write!(f, "(\"{}\", {}),\n", word, count).unwrap();
+        writeln!(f, "(\"{}\", {}),", word, count).unwrap();
     }
     write!(f, "];").unwrap();
 }
