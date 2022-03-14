@@ -1,4 +1,4 @@
-use crate::{enumerate_mask, Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
+use crate::{Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
@@ -62,8 +62,8 @@ impl Guesser for Enumerate {
             // pair deterministically produces only one mask.
             let mut totals = [0usize; MAX_MASK_ENUM];
             for (candidate, count) in &*self.remaining {
-                let idx = enumerate_mask(&Correctness::compute(candidate, word));
-                totals[idx] += count;
+                let idx = Correctness::pack(&Correctness::compute(candidate, word));
+                totals[usize::from(idx)] += count;
             }
 
             assert_eq!(totals.iter().sum::<usize>(), remaining_count, "{}", word);

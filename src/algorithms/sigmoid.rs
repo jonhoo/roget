@@ -1,4 +1,4 @@
-use crate::{enumerate_mask, Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
+use crate::{Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
@@ -124,8 +124,8 @@ impl Guesser for Sigmoid {
             // pair deterministically produces only one mask.
             let mut totals = [0.0f64; MAX_MASK_ENUM];
             for (candidate, count) in &*self.remaining {
-                let idx = enumerate_mask(&Correctness::compute(candidate, word));
-                totals[idx] += count;
+                let idx = Correctness::pack(&Correctness::compute(candidate, word));
+                totals[usize::from(idx)] += count;
             }
 
             let sum: f64 = totals
