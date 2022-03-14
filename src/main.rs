@@ -7,7 +7,7 @@ const GAMES: &str = include_str!("../answers.txt");
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    #[clap(short, long, arg_enum, default_value = "escore")]
+    #[clap(short, long, arg_enum, default_value = "cache")]
     implementation: Implementation,
 
     #[clap(short, long)]
