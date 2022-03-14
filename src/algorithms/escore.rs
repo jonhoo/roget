@@ -1,6 +1,9 @@
 use crate::{enumerate_mask, Correctness, Guess, Guesser, DICTIONARY, MAX_MASK_ENUM};
+use atomig::Atomic;
 use once_cell::sync::OnceCell;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::borrow::Cow;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 static INITIAL: OnceCell<Vec<(&'static str, f64)>> = OnceCell::new();
 static PATTERNS: OnceCell<Vec<[Correctness; 5]>> = OnceCell::new();
@@ -122,12 +125,6 @@ impl Escore {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-struct Candidate {
-    word: &'static str,
-    e_score: f64,
-}
-
 impl Guesser for Escore {
     fn guess(&mut self, history: &[Guess]) -> String {
         let score = history.len() as f64;
@@ -167,51 +164,53 @@ impl Guesser for Escore {
             .sum::<f64>();
         self.entropy.push(remaining_entropy);
 
-        let mut best: Option<Candidate> = None;
-        let mut i = 0;
         let stop = (self.remaining.len() / 3).max(20);
-        for &(word, count) in &*self.remaining {
-            // considering a world where we _did_ guess `word` and got `pattern` as the
-            // correctness. now, compute what _then_ is left.
 
-            // Rather than iterate over the patterns sequentially and add up the counts of words
-            // that result in that pattern, we can instead keep a running total for each pattern
-            // simultaneously by storing them in an array. We can do this since each candidate-word
-            // pair deterministically produces only one mask.
-            let mut totals = [0.0f64; MAX_MASK_ENUM];
-            for (candidate, count) in &*self.remaining {
-                let idx = enumerate_mask(&Correctness::compute(candidate, word));
-                totals[idx] += count;
-            }
+        let best_index_atomic = AtomicUsize::new(0);
+        let best_score_atomic = Atomic::new(f64::MAX);
 
-            let sum: f64 = totals
-                .into_iter()
-                .filter(|t| *t != 0.0)
-                .map(|p| {
-                    let p_of_this_pattern = p as f64 / remaining_p as f64;
-                    p_of_this_pattern * p_of_this_pattern.log2()
-                })
-                .sum();
-
-            let p_word = count as f64 / remaining_p as f64;
-            let e_info = -sum;
-            let e_score = p_word * (score + 1.0)
-                + (1.0 - p_word) * (score + est_steps_left(remaining_entropy - e_info));
-            if let Some(c) = best {
-                // Which one gives us a lower (expected) score?
-                if e_score < c.e_score {
-                    best = Some(Candidate { word, e_score });
+        let _ = self
+            .remaining
+            .par_iter()
+            .enumerate()
+            .try_for_each(|(i, (word, count))| {
+                let mut totals = [0.0f64; MAX_MASK_ENUM];
+                for (candidate, count) in &*self.remaining {
+                    let idx = enumerate_mask(&Correctness::compute(candidate, word));
+                    totals[idx] += count;
                 }
-            } else {
-                best = Some(Candidate { word, e_score });
-            }
 
-            i += 1;
-            if i >= stop {
-                break;
-            }
-        }
-        best.unwrap().word.to_string()
+                let sum: f64 = totals
+                    .into_iter()
+                    .filter(|t| *t != 0.0)
+                    .map(|p| {
+                        let p_of_this_pattern = p / remaining_p;
+                        p_of_this_pattern * p_of_this_pattern.log2()
+                    })
+                    .sum();
+
+                let p_word = count / remaining_p;
+                let e_info = -sum;
+                let e_score = p_word * (score + 1.0)
+                    + (1.0 - p_word) * (score + est_steps_left(remaining_entropy - e_info));
+
+                let curr_best_score = best_score_atomic.load(Ordering::Acquire);
+
+                if e_score < curr_best_score {
+                    best_index_atomic.store(i, Ordering::Release);
+                    best_score_atomic.store(e_score, Ordering::Release);
+                }
+
+                if i >= stop {
+                    return Err(());
+                }
+
+                Ok(())
+            });
+
+        let best_index = best_index_atomic.load(Ordering::Acquire);
+
+        self.remaining.get(best_index).unwrap().0.to_string()
     }
 
     fn finish(&self, guesses: usize) {
