@@ -21,7 +21,12 @@ impl CacheValue {
 }
 
 const NUM_WORDS: usize = DICTIONARY.len();
+// Since we use these as initializers only, I think they are fine.
+// If we do not have these and we attempt to have set the default normally, the compiler
+// complains that Cell is non-copy.
+#[allow(clippy::declare_interior_mutable_const)]
 const CELL: Cell<Option<CacheValue>> = Cell::new(None);
+#[allow(clippy::declare_interior_mutable_const)]
 const ROW: [Cell<Option<CacheValue>>; NUM_WORDS] = [CELL; NUM_WORDS];
 
 struct Cache([[Cell<Option<CacheValue>>; NUM_WORDS]; NUM_WORDS]);
@@ -155,7 +160,7 @@ impl Cached {
         }));
 
         COMPUTES.with(|c| {
-            c.get_or_init(|| Box::default());
+            c.get_or_init(Box::default);
         });
 
         Self {
