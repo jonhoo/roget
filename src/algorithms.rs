@@ -19,4 +19,4 @@ pub use sigmoid::Sigmoid;
 mod escore;
 pub use escore::Escore;
 mod cache;
-pub use cache::Cache;
+pub use cache::Cached;

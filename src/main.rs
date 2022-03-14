@@ -64,7 +64,7 @@ fn main() {
             play::<algorithms::Popular>(args.games);
         }
         Implementation::Cache => {
-            play::<algorithms::Cache>(args.games);
+            play::<algorithms::Cached>(args.games);
         }
     }
 }

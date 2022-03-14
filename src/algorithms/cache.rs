@@ -24,17 +24,31 @@ impl CacheValue {
 const NUM_WORDS: usize = DICTIONARY.len();
 const CELL: Cell<Option<CacheValue>> = Cell::new(None);
 const ROW: [Cell<Option<CacheValue>>; NUM_WORDS] = [CELL; NUM_WORDS];
-thread_local! {
-    static COMPUTES: UnSyncOnceCell<Box<[[Cell<Option<CacheValue>>; NUM_WORDS]]>> = Default::default();
+
+struct Cache([[Cell<Option<CacheValue>>; NUM_WORDS]; NUM_WORDS]);
+impl Cache {
+    #[inline]
+    fn get(&self) -> &[[Cell<Option<CacheValue>>; NUM_WORDS]; NUM_WORDS] {
+        &self.0
+    }
 }
 
-pub struct Cache {
+impl Default for Cache {
+    fn default() -> Self {
+        Cache([ROW; NUM_WORDS])
+    }
+}
+thread_local! {
+    static COMPUTES: UnSyncOnceCell<Box<Cache >> = Default::default();
+}
+
+pub struct Cached {
     remaining: Cow<'static, Vec<(&'static str, f64, usize)>>,
     patterns: Cow<'static, Vec<[Correctness; 5]>>,
     entropy: Vec<f64>,
 }
 
-impl Default for Cache {
+impl Default for Cached {
     fn default() -> Self {
         Self::new()
     }
@@ -114,7 +128,7 @@ fn sigmoid(p: f64) -> f64 {
 }
 const PRINT_SIGMOID: bool = false;
 
-impl Cache {
+impl Cached {
     pub fn new() -> Self {
         let remaining = Cow::Borrowed(INITIAL.get_or_init(|| {
             let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
@@ -143,10 +157,7 @@ impl Cache {
         }));
 
         COMPUTES.with(|c| {
-            c.get_or_init(|| {
-                let vec = vec![ROW; NUM_WORDS];
-                vec.into_boxed_slice()
-            });
+            c.get_or_init(|| Box::default());
         });
 
         Self {
@@ -181,7 +192,7 @@ struct Candidate {
     e_score: f64,
 }
 
-impl Guesser for Cache {
+impl Guesser for Cached {
     fn guess(&mut self, history: &[Guess]) -> String {
         let score = history.len() as f64;
 
@@ -194,7 +205,7 @@ impl Guesser for Cache {
                 .unwrap()
                 .2;
             COMPUTES.with(|c| {
-                let row = &c.get().unwrap()[last_idx];
+                let row = &c.get().unwrap().get()[last_idx];
                 if matches!(self.remaining, Cow::Owned(_)) {
                     self.remaining.to_mut().retain(|(word, _, word_idx)| {
                         reference == get_correctness_packed(row, &last.word, word, *word_idx)
@@ -247,7 +258,7 @@ impl Guesser for Cache {
             let mut totals = [0.0f64; MAX_MASK_ENUM];
 
             COMPUTES.with(|c| {
-                let row = &c.get().unwrap()[word_idx];
+                let row = &c.get().unwrap().get()[word_idx];
                 for (candidate, count, candidate_idx) in &*self.remaining {
                     let idx = get_correctness_packed(row, word, candidate, *candidate_idx);
                     totals[usize::from(idx)] += count;

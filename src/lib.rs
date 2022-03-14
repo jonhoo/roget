@@ -1,6 +1,8 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::blocks_in_if_conditions)]
 
+extern crate core;
+
 use std::{borrow::Cow, collections::HashSet};
 
 pub mod algorithms;
