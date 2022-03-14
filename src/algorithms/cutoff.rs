@@ -3,11 +3,9 @@ use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
 static INITIAL: OnceCell<Vec<(&'static str, usize)>> = OnceCell::new();
-static PATTERNS: OnceCell<Vec<[Correctness; 5]>> = OnceCell::new();
 
 pub struct Cutoff {
     remaining: Cow<'static, Vec<(&'static str, usize)>>,
-    patterns: Cow<'static, Vec<[Correctness; 5]>>,
 }
 
 impl Default for Cutoff {
@@ -20,7 +18,6 @@ impl Cutoff {
     pub fn new() -> Self {
         Self {
             remaining: Cow::Borrowed(INITIAL.get_or_init(|| DICTIONARY.to_vec())),
-            patterns: Cow::Borrowed(PATTERNS.get_or_init(|| Correctness::patterns().collect())),
         }
     }
 }
@@ -49,10 +46,7 @@ impl Guesser for Cutoff {
             }
         }
         if history.is_empty() {
-            self.patterns = Cow::Borrowed(PATTERNS.get().unwrap());
             return "tares".to_string();
-        } else {
-            assert!(!self.patterns.is_empty());
         }
 
         let remaining_count: usize = self.remaining.iter().map(|&(_, c)| c).sum();

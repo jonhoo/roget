@@ -6,7 +6,6 @@ use std::cell::Cell;
 use std::num::NonZeroU8;
 
 static INITIAL: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
-static PATTERNS: OnceCell<Vec<[Correctness; 5]>> = OnceCell::new();
 
 #[derive(Copy, Clone)]
 struct CacheValue(NonZeroU8);
@@ -44,7 +43,6 @@ thread_local! {
 
 pub struct Cached {
     remaining: Cow<'static, Vec<(&'static str, f64, usize)>>,
-    patterns: Cow<'static, Vec<[Correctness; 5]>>,
     entropy: Vec<f64>,
 }
 
@@ -162,7 +160,6 @@ impl Cached {
 
         Self {
             remaining,
-            patterns: Cow::Borrowed(PATTERNS.get_or_init(|| Correctness::patterns().collect())),
             entropy: Vec::new(),
         }
     }
@@ -225,12 +222,9 @@ impl Guesser for Cached {
             });
         }
         if history.is_empty() {
-            self.patterns = Cow::Borrowed(PATTERNS.get().unwrap());
             // NOTE: I did a manual run with this commented out and it indeed produced "tares" as
             // the first guess. It slows down the run by a lot though.
             return "tares".to_string();
-        } else {
-            assert!(!self.patterns.is_empty());
         }
 
         let remaining_p: f64 = self.remaining.iter().map(|&(_, p, _)| p).sum();

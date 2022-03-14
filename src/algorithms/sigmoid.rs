@@ -3,11 +3,9 @@ use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
 static INITIAL: OnceCell<Vec<(&'static str, f64)>> = OnceCell::new();
-static PATTERNS: OnceCell<Vec<[Correctness; 5]>> = OnceCell::new();
 
 pub struct Sigmoid {
     remaining: Cow<'static, Vec<(&'static str, f64)>>,
-    patterns: Cow<'static, Vec<[Correctness; 5]>>,
 }
 
 impl Default for Sigmoid {
@@ -74,7 +72,6 @@ impl Sigmoid {
                     .map(|(word, count)| (word, sigmoid(count as f64 / sum as f64)))
                     .collect()
             })),
-            patterns: Cow::Borrowed(PATTERNS.get_or_init(|| Correctness::patterns().collect())),
         }
     }
 }
@@ -103,10 +100,7 @@ impl Guesser for Sigmoid {
             }
         }
         if history.is_empty() {
-            self.patterns = Cow::Borrowed(PATTERNS.get().unwrap());
             return "tares".to_string();
-        } else {
-            assert!(!self.patterns.is_empty());
         }
 
         let remaining_p: f64 = self.remaining.iter().map(|&(_, p)| p).sum();

@@ -3,11 +3,9 @@ use once_cell::sync::OnceCell;
 use std::borrow::Cow;
 
 static INITIAL: OnceCell<Vec<(&'static str, f64)>> = OnceCell::new();
-static PATTERNS: OnceCell<Vec<[Correctness; 5]>> = OnceCell::new();
 
 pub struct Escore {
     remaining: Cow<'static, Vec<(&'static str, f64)>>,
-    patterns: Cow<'static, Vec<[Correctness; 5]>>,
     entropy: Vec<f64>,
 }
 
@@ -116,7 +114,6 @@ impl Escore {
                     .map(|(word, count)| (word, sigmoid(count as f64 / sum as f64)))
                     .collect()
             })),
-            patterns: Cow::Borrowed(PATTERNS.get_or_init(|| Correctness::patterns().collect())),
             entropy: Vec::new(),
         }
     }
@@ -148,12 +145,9 @@ impl Guesser for Escore {
             }
         }
         if history.is_empty() {
-            self.patterns = Cow::Borrowed(PATTERNS.get().unwrap());
             // NOTE: I did a manual run with this commented out and it indeed produced "tares" as
             // the first guess. It slows down the run by a lot though.
             return "tares".to_string();
-        } else {
-            assert!(!self.patterns.is_empty());
         }
 
         let remaining_p: f64 = self.remaining.iter().map(|&(_, p)| p).sum();
