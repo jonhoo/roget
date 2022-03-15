@@ -7,22 +7,28 @@ const GAMES: &str = include_str!("../answers.txt");
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// If true, counts will be smoothed using a sigmoid.
+    /// By default, counts will be smoothed using a sigmoid. This flag disables that.
     #[clap(long)]
     no_sigmoid: bool,
 
-    /// If true, candidates will be ranked based on expected score.
+    /// Set how candidates are ranked at each step of the solver.
+    ///
+    /// By default, candidates will be ranked based on expected score.
     #[clap(short, long, arg_enum, default_value = "expected-score")]
     rank_by: Rank,
 
-    /// If true, correcness computation will be cached.
+    /// By default, correcness computation are cached. This flag disables that.
     #[clap(long)]
     no_cache: bool,
 
-    /// If true, only the most likely 1/3 of candidates are considered at each step.
+    /// By default, only the most likely 1/3 of candidates are considered at each step. This flag
+    /// disables that pruning behavior.
     #[clap(long)]
     no_cutoff: bool,
 
+    /// The number of games to run.
+    ///
+    /// If not passed, all Wordle games are run.
     #[clap(short, long)]
     games: Option<usize>,
 }
