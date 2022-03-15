@@ -121,6 +121,9 @@ pub enum Rank {
     /// p(word) * E[information]
     WeightedInformation,
 
+    /// p(word) + E[information]
+    InfoPlusProbability,
+
     /// E[information]
     ExpectedInformation,
 }
@@ -369,6 +372,7 @@ impl Guesser for Solver {
                         + (1.0 - p_word) * (score + est_steps_left(remaining_entropy - e_info)))
                 }
                 Rank::WeightedInformation => p_word * e_info,
+                Rank::InfoPlusProbability => p_word + e_info,
                 Rank::ExpectedInformation => e_info,
             };
             if let Some(c) = best {

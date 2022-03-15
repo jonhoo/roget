@@ -38,6 +38,9 @@ enum Rank {
     /// p(word) * E[information]
     WeightedInformation,
 
+    /// p(word) + E[information]
+    InfoPlusProbability,
+
     /// E[information]
     ExpectedInformation,
 }
@@ -59,6 +62,7 @@ fn main() {
         Rank::First => roget::Rank::First,
         Rank::ExpectedScore => roget::Rank::ExpectedScore,
         Rank::WeightedInformation => roget::Rank::WeightedInformation,
+        Rank::InfoPlusProbability => roget::Rank::InfoPlusProbability,
         Rank::ExpectedInformation => roget::Rank::ExpectedInformation,
     };
     play(move || solver.build(), args.games);
