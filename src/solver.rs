@@ -4,8 +4,10 @@ use once_cell::unsync::OnceCell as UnSyncOnceCell;
 use std::borrow::Cow;
 use std::cell::Cell;
 
+/// The initial set of words without any smoothing
+static INITIAL_COUNTS: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
 /// The initial set of words after applying sigmoid smoothing.
-static INITIAL: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
+static INITIAL_SIGMOID: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
 
 /// A per-thread cache of cached `Correctness` for each word pair.
 ///
@@ -153,35 +155,40 @@ impl Default for Options {
 
 impl Options {
     pub fn build(self) -> Solver {
-        let remaining = Cow::Borrowed(INITIAL.get_or_init(|| {
-            let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
+        let remaining = if self.sigmoid {
+            INITIAL_SIGMOID.get_or_init(|| {
+                let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
 
-            if PRINT_SIGMOID {
-                for &(word, count) in DICTIONARY.iter().rev() {
-                    let p = count as f64 / sum as f64;
-                    println!(
-                        "{} {:.6}% -> {:.6}% ({})",
-                        word,
-                        100.0 * p,
-                        100.0 * sigmoid(p),
-                        count
-                    );
-                }
-            }
-
-            DICTIONARY
-                .iter()
-                .copied()
-                .enumerate()
-                .map(|(idx, (word, count))| {
-                    if self.sigmoid {
-                        (word, sigmoid(count as f64 / sum as f64), idx)
-                    } else {
-                        (word, count as f64, idx)
+                if PRINT_SIGMOID {
+                    for &(word, count) in DICTIONARY.iter().rev() {
+                        let p = count as f64 / sum as f64;
+                        println!(
+                            "{} {:.6}% -> {:.6}% ({})",
+                            word,
+                            100.0 * p,
+                            100.0 * sigmoid(p),
+                            count
+                        );
                     }
-                })
-                .collect()
-        }));
+                }
+
+                DICTIONARY
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(idx, (word, count))| (word, sigmoid(count as f64 / sum as f64), idx))
+                    .collect()
+            })
+        } else {
+            INITIAL_COUNTS.get_or_init(|| {
+                DICTIONARY
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(idx, (word, count))| (word, count as f64, idx))
+                    .collect()
+            })
+        };
 
         if self.cache {
             COMPUTES.with(|c| {
@@ -223,7 +230,7 @@ impl Options {
         }
 
         Solver {
-            remaining,
+            remaining: Cow::Borrowed(remaining),
             entropy: Vec::new(),
             last_guess_idx: None,
 
