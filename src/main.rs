@@ -1,5 +1,5 @@
 use clap::{ArgEnum, Parser};
-use roget::{algorithms, Guesser};
+use roget::{Guesser, Solver};
 
 const GAMES: &str = include_str!("../answers.txt");
 
@@ -7,78 +7,73 @@ const GAMES: &str = include_str!("../answers.txt");
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    #[clap(short, long, arg_enum, default_value = "cache")]
-    implementation: Implementation,
+    /// If true, counts will be smoothed using a sigmoid.
+    #[clap(long)]
+    no_sigmoid: bool,
+
+    /// If true, candidates will be ranked based on expected score.
+    #[clap(short, long, arg_enum, default_value = "expected-score")]
+    rank_by: Rank,
+
+    /// If true, correcness computation will be cached.
+    #[clap(long)]
+    no_cache: bool,
+
+    /// If true, only the most likely 1/3 of candidates are considered at each step.
+    #[clap(long)]
+    no_cutoff: bool,
 
     #[clap(short, long)]
     games: Option<usize>,
 }
 
 #[derive(ArgEnum, Debug, Clone, Copy)]
-enum Implementation {
-    Naive,
-    Allocs,
-    Vecrem,
-    Precalc,
-    Weight,
-    Enum,
-    Cutoff,
-    Sigmoid,
-    Escore,
-    Popular,
-    Cache,
+enum Rank {
+    /// Just pick the first candidate.
+    First,
+
+    /// E[score] = p(word) * (score + 1) + (1 - p(word)) * (score + E[guesses](entropy - E[information]))
+    ExpectedScore,
+
+    /// p(word) * E[information]
+    WeightedInformation,
+
+    /// E[information]
+    ExpectedInformation,
 }
 
 fn main() {
     let args = Args::parse();
 
-    match args.implementation {
-        Implementation::Naive => {
-            play::<algorithms::Naive>(args.games);
-        }
-        Implementation::Allocs => {
-            play::<algorithms::Allocs>(args.games);
-        }
-        Implementation::Vecrem => {
-            play::<algorithms::Vecrem>(args.games);
-        }
-        Implementation::Precalc => {
-            play::<algorithms::Precalc>(args.games);
-        }
-        Implementation::Weight => {
-            play::<algorithms::Weight>(args.games);
-        }
-        Implementation::Enum => {
-            play::<algorithms::Enumerate>(args.games);
-        }
-        Implementation::Cutoff => {
-            play::<algorithms::Cutoff>(args.games);
-        }
-        Implementation::Sigmoid => {
-            play::<algorithms::Sigmoid>(args.games);
-        }
-        Implementation::Escore => {
-            play::<algorithms::Escore>(args.games);
-        }
-        Implementation::Popular => {
-            play::<algorithms::Popular>(args.games);
-        }
-        Implementation::Cache => {
-            play::<algorithms::Cached>(args.games);
-        }
+    let mut solver = Solver::builder();
+    if args.no_cache {
+        solver.cache = false;
     }
+    if args.no_cutoff {
+        solver.cutoff = false;
+    }
+    if args.no_sigmoid {
+        solver.sigmoid = false;
+    }
+    solver.rank_by = match args.rank_by {
+        Rank::First => roget::Rank::First,
+        Rank::ExpectedScore => roget::Rank::ExpectedScore,
+        Rank::WeightedInformation => roget::Rank::WeightedInformation,
+        Rank::ExpectedInformation => roget::Rank::ExpectedInformation,
+    };
+    play(move || solver.build(), args.games);
 }
 
-fn play<G>(max: Option<usize>)
+fn play<G>(mut mk: impl FnMut() -> G, max: Option<usize>)
 where
-    G: Guesser + Default,
+    G: Guesser,
 {
     let w = roget::Wordle::new();
     let mut score = 0;
     let mut games = 0;
     let mut histogram = Vec::new();
     for answer in GAMES.split_whitespace().take(max.unwrap_or(usize::MAX)) {
-        let guesser = G::default();
+        let guesser = (mk)();
         if let Some(s) = w.play(answer, guesser) {
             games += 1;
             score += s;
@@ -110,14 +105,17 @@ where
 #[cfg(test)]
 mod tests {
     #[test]
-    fn first_10_games_with_escore() {
+    fn default_solver() {
         let w = roget::Wordle::new();
         let results: Vec<_> = crate::GAMES
             .split_whitespace()
-            .take(10)
-            .filter_map(|answer| w.play(answer, roget::algorithms::Escore::new()))
+            .take(20)
+            .filter_map(|answer| w.play(answer, roget::Solver::default()))
             .collect();
 
-        assert_eq!(results, [4, 3, 4, 4, 3, 4, 4, 3, 4, 3]);
+        assert_eq!(
+            results,
+            [4, 3, 4, 4, 3, 4, 4, 3, 4, 3, 4, 3, 3, 4, 3, 4, 4, 4, 3, 3]
+        );
     }
 }

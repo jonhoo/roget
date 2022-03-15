@@ -1,11 +1,10 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::blocks_in_if_conditions)]
 
-extern crate core;
+use std::{borrow::Cow, collections::HashSet, num::NonZeroU8};
 
-use std::{borrow::Cow, collections::HashSet};
-
-pub mod algorithms;
+mod solver;
+pub use solver::{Rank, Solver};
 
 include!(concat!(env!("OUT_DIR"), "/dictionary.rs"));
 
@@ -101,31 +100,36 @@ impl Correctness {
 
         c
     }
+}
 
-    pub fn pack(c: &[Correctness; 5]) -> u8 {
-        c.iter().fold(0, |acc, c| {
+pub const MAX_MASK_ENUM: usize = 3 * 3 * 3 * 3 * 3;
+
+/// A wrapper type for `[Correctness; 5]` packed into a single byte with a niche.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(transparent)]
+// The NonZeroU8 here lets the compiler know that we're not using the value `0`, and that `0` can
+// therefore be used to represent `None` for `Option<PackedCorrectness>`.
+struct PackedCorrectness(NonZeroU8);
+
+impl From<[Correctness; 5]> for PackedCorrectness {
+    fn from(c: [Correctness; 5]) -> Self {
+        let packed = c.iter().fold(0, |acc, c| {
             acc * 3
                 + match c {
                     Correctness::Correct => 0,
                     Correctness::Misplaced => 1,
                     Correctness::Wrong => 2,
                 }
-        })
-    }
-
-    pub fn patterns() -> impl Iterator<Item = [Self; 5]> {
-        itertools::iproduct!(
-            [Self::Correct, Self::Misplaced, Self::Wrong],
-            [Self::Correct, Self::Misplaced, Self::Wrong],
-            [Self::Correct, Self::Misplaced, Self::Wrong],
-            [Self::Correct, Self::Misplaced, Self::Wrong],
-            [Self::Correct, Self::Misplaced, Self::Wrong]
-        )
-        .map(|(a, b, c, d, e)| [a, b, c, d, e])
+        });
+        Self(NonZeroU8::new(packed + 1).unwrap())
     }
 }
 
-pub const MAX_MASK_ENUM: usize = 3 * 3 * 3 * 3 * 3;
+impl From<PackedCorrectness> for u8 {
+    fn from(this: PackedCorrectness) -> Self {
+        this.0.get() - 1
+    }
+}
 
 pub struct Guess<'a> {
     pub word: Cow<'a, str>,
