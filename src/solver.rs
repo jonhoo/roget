@@ -9,10 +9,6 @@ static INITIAL: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
 
 /// A per-thread cache of cached `Correctness` for each word pair.
 ///
-/// NOTE: We _could_ just keep the "top right" half of this matrix, and on access just make sure we
-/// index by the lowest-indexed word first. That'd save us some memory (this is quite large;
-/// ~160MB) at the cost of slightly slower access (a `min` and a `max`).
-///
 /// We make this thread-local so that access to it is as cheap as we can get it.
 ///
 /// We store a `Box` because the array is quite large, and we're unlikely to have the stack space
