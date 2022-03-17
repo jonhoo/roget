@@ -1,7 +1,6 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::blocks_in_if_conditions)]
 
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::{borrow::Cow, collections::HashSet};
 
 mod solver;
@@ -108,7 +107,7 @@ pub const MAX_MASK_ENUM: usize = 3 * 3 * 3 * 3 * 3;
 /// A wrapper type for `[Correctness; 5]` packed into a single byte with a niche.
 #[derive(Debug)]
 #[repr(transparent)]
-struct PackedCorrectness(AtomicU8);
+struct PackedCorrectness(u8);
 
 unsafe impl Sync for PackedCorrectness {}
 
@@ -125,8 +124,8 @@ impl PackedCorrectness {
     }
 
     #[inline]
-    fn get_or_init(&self, guess: &str, answer: &str) -> u8 {
-        match self.0.load(Ordering::Acquire) {
+    fn get_or_init(&mut self, guess: &str, answer: &str) -> u8 {
+        match self.0 {
             0 => {
                 let val = Self::packed(Correctness::compute(answer, guess));
                 debug_assert!(
@@ -134,13 +133,8 @@ impl PackedCorrectness {
                     "Initialization function must return value below {}",
                     MAX_MASK_ENUM
                 );
-                match self
-                    .0
-                    .compare_exchange(0, val + 1, Ordering::AcqRel, Ordering::Acquire)
-                {
-                    Err(old) => old - 1,
-                    Ok(_) => val,
-                }
+                self.0 = val + 1;
+                val
             }
             val => val - 1,
         }

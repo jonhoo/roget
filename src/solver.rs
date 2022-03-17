@@ -3,6 +3,7 @@ use once_cell::sync::OnceCell;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::cmp::Ordering;
+use std::sync::Mutex;
 
 /// The initial set of words after applying sigmoid smoothing.
 static INITIAL: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
@@ -13,7 +14,7 @@ static INITIAL: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
 ///
 /// We store a `Box` because the array is quite large, and we're unlikely to have the stack space
 /// needed to store the whole thing on a given thread's stack.
-type Cache = [[PackedCorrectness; DICTIONARY.len()]; DICTIONARY.len()];
+type Cache = [Mutex<[PackedCorrectness; DICTIONARY.len()]>; DICTIONARY.len()];
 static COMPUTES: OnceCell<Box<Cache>> = OnceCell::new();
 
 pub struct Solver {
@@ -219,7 +220,7 @@ impl Options {
 
 // This inline gives about a 13% speedup.
 #[inline]
-fn get_packed(row: &[PackedCorrectness], guess: &str, answer: &str, answer_idx: usize) -> u8 {
+fn get_packed(row: &mut [PackedCorrectness], guess: &str, answer: &str, answer_idx: usize) -> u8 {
     row[answer_idx].get_or_init(guess, answer)
 }
 
@@ -254,9 +255,11 @@ impl Guesser for Solver {
         if let Some(last) = history.last() {
             if self.options.cache {
                 let reference = PackedCorrectness::packed(last.mask);
-                let row = &COMPUTES.get().unwrap()[self.last_guess_idx.unwrap()];
+                let mut row = COMPUTES.get().unwrap()[self.last_guess_idx.unwrap()]
+                    .lock()
+                    .unwrap();
                 self.trim(|word, word_idx| {
-                    reference == get_packed(row, &last.word, word, word_idx)
+                    reference == get_packed(&mut *row, &last.word, word, word_idx)
                 });
             } else {
                 self.trim(|word, _| last.matches(word));
@@ -302,10 +305,11 @@ impl Guesser for Solver {
             let mut totals = [0.0f64; MAX_MASK_ENUM];
 
             if self.options.cache {
-                let row: &[PackedCorrectness; DICTIONARY.len()] =
+                let row: &Mutex<[PackedCorrectness; DICTIONARY.len()]> =
                     &COMPUTES.get().unwrap()[word_idx];
+                let mut row = row.lock().unwrap();
                 for (candidate, count, candidate_idx) in &*self.remaining {
-                    let idx = get_packed(row, word, candidate, *candidate_idx);
+                    let idx = get_packed(&mut *row, word, candidate, *candidate_idx);
                     totals[usize::from(idx)] += count;
                 }
             } else {
