@@ -306,12 +306,12 @@ impl Guesser for Solver {
                     &COMPUTES.get().unwrap()[word_idx];
                 for (candidate, count, candidate_idx) in &*self.remaining {
                     let idx = get_packed(row, word, candidate, *candidate_idx);
-                    totals[usize::from(u8::from(idx))] += count;
+                    totals[usize::from(idx)] += count;
                 }
             } else {
                 for (candidate, count, _) in &*self.remaining {
                     let idx = PackedCorrectness::packed(Correctness::compute(candidate, word));
-                    totals[usize::from(u8::from(idx))] += count;
+                    totals[usize::from(idx)] += count;
                 }
             }
 
