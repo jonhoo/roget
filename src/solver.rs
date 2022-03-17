@@ -140,6 +140,9 @@ pub struct Options {
 
     /// If true, only the most likely 1/3 of candidates are considered at each step.
     pub cutoff: bool,
+
+    /// If true, solver may not guess known-wrong words.
+    pub hard_mode: bool,
 }
 
 impl Default for Options {
@@ -149,6 +152,7 @@ impl Default for Options {
             rank_by: Rank::ExpectedScore,
             cache: true,
             cutoff: true,
+            hard_mode: true,
         }
     }
 }
@@ -311,11 +315,12 @@ impl Guesser for Solver {
             // NOTE: I did a manual run with this commented out and it indeed produced "tares" as
             // the first guess. It slows down the run by a lot though.
             return "tares".to_string();
-        } else if self.options.rank_by == Rank::First {
+        } else if self.options.rank_by == Rank::First || self.remaining.len() == 1 {
             let w = self.remaining.first().unwrap();
             self.last_guess_idx = Some(w.2);
             return w.0.to_string();
         }
+        assert!(!self.remaining.is_empty());
 
         let remaining_p: f64 = self.remaining.iter().map(|&(_, p, _)| p).sum();
         let remaining_entropy = -self
@@ -331,7 +336,14 @@ impl Guesser for Solver {
         let mut best: Option<Candidate> = None;
         let mut i = 0;
         let stop = (self.remaining.len() / 3).max(20);
-        for &(word, count, word_idx) in &*self.remaining {
+        let consider = if self.options.hard_mode {
+            &*self.remaining
+        } else if self.options.sigmoid {
+            INITIAL_SIGMOID.get().unwrap()
+        } else {
+            INITIAL_COUNTS.get().unwrap()
+        };
+        for &(word, count, word_idx) in consider {
             // considering a world where we _did_ guess `word` and got `pattern` as the
             // correctness. now, compute what _then_ is left.
 
@@ -341,16 +353,19 @@ impl Guesser for Solver {
             // pair deterministically produces only one mask.
             let mut totals = [0.0f64; MAX_MASK_ENUM];
 
+            let mut in_remaining = false;
             if self.options.cache {
                 COMPUTES.with(|c| {
                     let row = &c.get().unwrap()[word_idx];
                     for (candidate, count, candidate_idx) in &*self.remaining {
+                        in_remaining |= word_idx == *candidate_idx;
                         let idx = get_packed(row, word, candidate, *candidate_idx);
                         totals[usize::from(u8::from(idx))] += count;
                     }
                 });
             } else {
-                for (candidate, count, _) in &*self.remaining {
+                for (candidate, count, candidate_idx) in &*self.remaining {
+                    in_remaining |= word_idx == *candidate_idx;
                     let idx = PackedCorrectness::from(Correctness::compute(candidate, word));
                     totals[usize::from(u8::from(idx))] += count;
                 }
@@ -365,7 +380,12 @@ impl Guesser for Solver {
                 })
                 .sum();
 
-            let p_word = count as f64 / remaining_p as f64;
+            let p_word = if in_remaining {
+                count as f64 / remaining_p as f64
+            } else {
+                // TODO: penalize further.
+                0.0
+            };
             let e_info = -sum;
             let goodness = match self.options.rank_by {
                 Rank::First => unreachable!("early return above"),
@@ -395,7 +415,7 @@ impl Guesser for Solver {
                 });
             }
 
-            if self.options.cutoff {
+            if self.options.cutoff && in_remaining {
                 i += 1;
                 if i >= stop {
                     break;
@@ -403,6 +423,7 @@ impl Guesser for Solver {
             }
         }
         let best = best.unwrap();
+        assert_ne!(best.goodness, 0.0);
         self.last_guess_idx = Some(best.idx);
         best.word.to_string()
     }

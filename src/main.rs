@@ -26,6 +26,12 @@ struct Args {
     #[clap(long)]
     no_cutoff: bool,
 
+    /// By default, all games are played in "hard mode" where known-incorrect guesses are
+    /// disallowed. This flag allows arbitrary guesses at every step, which allows for more optimal
+    /// guessing, but also increases the search space.
+    #[clap(long)]
+    easy: bool,
+
     /// The number of games to run.
     ///
     /// If not passed, all Wordle games are run.
@@ -63,6 +69,9 @@ fn main() {
     }
     if args.no_sigmoid {
         solver.sigmoid = false;
+    }
+    if args.easy {
+        solver.hard_mode = false;
     }
     solver.rank_by = match args.rank_by {
         Rank::First => roget::Rank::First,
