@@ -1,8 +1,6 @@
 use crate::{Correctness, Guess, Guesser, PackedCorrectness, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
-use once_cell::unsync::OnceCell as UnSyncOnceCell;
 use std::borrow::Cow;
-use std::cell::Cell;
 
 /// The initial set of words after applying sigmoid smoothing.
 static INITIAL: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
@@ -13,10 +11,8 @@ static INITIAL: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
 ///
 /// We store a `Box` because the array is quite large, and we're unlikely to have the stack space
 /// needed to store the whole thing on a given thread's stack.
-type Cache = [[Cell<Option<PackedCorrectness>>; DICTIONARY.len()]; DICTIONARY.len()];
-thread_local! {
-    static COMPUTES: UnSyncOnceCell<Box<Cache>> = Default::default();
-}
+type Cache = [[PackedCorrectness; DICTIONARY.len()]; DICTIONARY.len()];
+static COMPUTES: OnceCell<Box<Cache>> = OnceCell::new();
 
 pub struct Solver {
     remaining: Cow<'static, Vec<(&'static str, f64, usize)>>,
@@ -184,41 +180,28 @@ impl Options {
         }));
 
         if self.cache {
-            COMPUTES.with(|c| {
-                c.get_or_init(|| {
-                    // This is really silly.
-                    // We'd like to just do `Box::default()`, but that doesn't work since `Default`
-                    // isn't implemented for arbitrarily long arrays. We can't use `Box::new` since
-                    // that'll create the (huge) array on the _stack_ first before then copying it
-                    // to the heap. And support for creation of values directly on the heap (the
-                    // `box` keyword) is an unstable nightly-only feature.
-                    //
-                    // So, we use unsafe.
-
-                    // First, we sanity check that the byte value 0 is equivalent to our `None`
-                    // value.
-                    let c = &Cell::new(None::<PackedCorrectness>);
-                    assert_eq!(std::mem::size_of_val(c), 1);
-                    let c = c as *const _;
-                    let c = c as *const u8;
-                    assert_eq!(unsafe { *c }, 0);
-
-                    // Then, we allocate the number of bytes we need directly on the heap.
-                    // And we request that they're all zero, which by the above we know matches the
-                    // value we expect for `Cache`.
-                    let mem = unsafe {
-                        std::alloc::alloc_zeroed(
-                            std::alloc::Layout::from_size_align(
-                                std::mem::size_of::<Cache>(),
-                                std::mem::align_of::<Cache>(),
-                            )
-                            .unwrap(),
+            COMPUTES.get_or_init(|| {
+                // This is really silly.
+                // We'd like to just do `Box::default()`, but that doesn't work since `Default`
+                // isn't implemented for arbitrarily long arrays. We can't use `Box::new` since
+                // that'll create the (huge) array on the _stack_ first before then copying it
+                // to the heap. And support for creation of values directly on the heap (the
+                // `box` keyword) is an unstable nightly-only feature.
+                //
+                // So, we use unsafe. We allocate the number of bytes we need directly on the heap.
+                // And we request that they're all zero.
+                let mem = unsafe {
+                    std::alloc::alloc_zeroed(
+                        std::alloc::Layout::from_size_align(
+                            std::mem::size_of::<Cache>(),
+                            std::mem::align_of::<Cache>(),
                         )
-                    };
+                        .unwrap(),
+                    )
+                };
 
-                    // And then we cast it to a Box of the appropriate type, which should be safe.
-                    unsafe { Box::from_raw(mem as *mut _) }
-                });
+                // And then we cast it to a Box of the appropriate type, which should be safe.
+                unsafe { Box::from_raw(mem as *mut _) }
             });
         }
 
@@ -234,21 +217,8 @@ impl Options {
 
 // This inline gives about a 13% speedup.
 #[inline]
-fn get_packed(
-    row: &[Cell<Option<PackedCorrectness>>],
-    guess: &str,
-    answer: &str,
-    answer_idx: usize,
-) -> PackedCorrectness {
-    let cell = &row[answer_idx];
-    match cell.get() {
-        Some(a) => a,
-        None => {
-            let correctness = PackedCorrectness::from(Correctness::compute(answer, guess));
-            cell.set(Some(correctness));
-            correctness
-        }
-    }
+fn get_packed(row: &[PackedCorrectness], guess: &str, answer: &str, answer_idx: usize) -> u8 {
+    row[answer_idx].get_or_init(guess, answer)
 }
 
 impl Solver {
@@ -281,12 +251,10 @@ impl Guesser for Solver {
 
         if let Some(last) = history.last() {
             if self.options.cache {
-                let reference = PackedCorrectness::from(last.mask);
-                COMPUTES.with(|c| {
-                    let row = &c.get().unwrap()[self.last_guess_idx.unwrap()];
-                    self.trim(|word, word_idx| {
-                        reference == get_packed(row, &last.word, word, word_idx)
-                    });
+                let reference = PackedCorrectness::packed(last.mask);
+                let row = &COMPUTES.get().unwrap()[self.last_guess_idx.unwrap()];
+                self.trim(|word, word_idx| {
+                    reference == get_packed(row, &last.word, word, word_idx)
                 });
             } else {
                 self.trim(|word, _| last.matches(word));
@@ -335,16 +303,14 @@ impl Guesser for Solver {
             let mut totals = [0.0f64; MAX_MASK_ENUM];
 
             if self.options.cache {
-                COMPUTES.with(|c| {
-                    let row = &c.get().unwrap()[word_idx];
-                    for (candidate, count, candidate_idx) in &*self.remaining {
-                        let idx = get_packed(row, word, candidate, *candidate_idx);
-                        totals[usize::from(u8::from(idx))] += count;
-                    }
-                });
+                let row = &COMPUTES.get().unwrap()[word_idx];
+                for (candidate, count, candidate_idx) in &*self.remaining {
+                    let idx = get_packed(row, word, candidate, *candidate_idx);
+                    totals[usize::from(u8::from(idx))] += count;
+                }
             } else {
                 for (candidate, count, _) in &*self.remaining {
-                    let idx = PackedCorrectness::from(Correctness::compute(candidate, word));
+                    let idx = PackedCorrectness::packed(Correctness::compute(candidate, word));
                     totals[usize::from(u8::from(idx))] += count;
                 }
             }

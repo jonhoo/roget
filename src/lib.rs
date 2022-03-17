@@ -1,7 +1,8 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::blocks_in_if_conditions)]
 
-use std::{borrow::Cow, collections::HashSet, num::NonZeroU8};
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::{borrow::Cow, collections::HashSet};
 
 mod solver;
 pub use solver::{Rank, Solver};
@@ -105,29 +106,44 @@ impl Correctness {
 pub const MAX_MASK_ENUM: usize = 3 * 3 * 3 * 3 * 3;
 
 /// A wrapper type for `[Correctness; 5]` packed into a single byte with a niche.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 #[repr(transparent)]
-// The NonZeroU8 here lets the compiler know that we're not using the value `0`, and that `0` can
-// therefore be used to represent `None` for `Option<PackedCorrectness>`.
-struct PackedCorrectness(NonZeroU8);
+struct PackedCorrectness(AtomicU8);
 
-impl From<[Correctness; 5]> for PackedCorrectness {
-    fn from(c: [Correctness; 5]) -> Self {
-        let packed = c.iter().fold(0, |acc, c| {
+unsafe impl Sync for PackedCorrectness {}
+
+impl PackedCorrectness {
+    fn packed(c: [Correctness; 5]) -> u8 {
+        c.iter().fold(0, |acc, c| {
             acc * 3
                 + match c {
                     Correctness::Correct => 0,
                     Correctness::Misplaced => 1,
                     Correctness::Wrong => 2,
                 }
-        });
-        Self(NonZeroU8::new(packed + 1).unwrap())
+        })
     }
-}
 
-impl From<PackedCorrectness> for u8 {
-    fn from(this: PackedCorrectness) -> Self {
-        this.0.get() - 1
+    #[inline]
+    fn get_or_init(&self, guess: &str, answer: &str) -> u8 {
+        match self.0.load(Ordering::Acquire) {
+            0 => {
+                let val = Self::packed(Correctness::compute(answer, guess));
+                debug_assert!(
+                    val < MAX_MASK_ENUM as u8,
+                    "Initialization function must return value below {}",
+                    MAX_MASK_ENUM
+                );
+                match self
+                    .0
+                    .compare_exchange(0, val + 1, Ordering::AcqRel, Ordering::Acquire)
+                {
+                    Err(old) => old - 1,
+                    Ok(_) => val,
+                }
+            }
+            val => val - 1,
+        }
     }
 }
 
