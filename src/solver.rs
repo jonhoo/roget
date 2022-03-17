@@ -291,71 +291,85 @@ impl Guesser for Solver {
             .sum::<f64>();
         self.entropy.push(remaining_entropy);
 
-        let stop = if self.options.cutoff {
-            (self.remaining.len() / 3).max(20)
-        } else {
-            usize::MAX
+        let get_candidate = |&(word, count, word_idx)| {
+            // considering a world where we _did_ guess `word` and got `pattern` as the
+            // correctness. now, compute what _then_ is left.
+
+            // Rather than iterate over the patterns sequentially and add up the counts of words
+            // that result in that pattern, we can instead keep a running total for each pattern
+            // simultaneously by storing them in an array. We can do this since each candidate-word
+            // pair deterministically produces only one mask.
+            let mut totals = [0.0f64; MAX_MASK_ENUM];
+
+            if self.options.cache {
+                let row: &[PackedCorrectness; DICTIONARY.len()] =
+                    &COMPUTES.get().unwrap()[word_idx];
+                for (candidate, count, candidate_idx) in &*self.remaining {
+                    let idx = get_packed(row, word, candidate, *candidate_idx);
+                    totals[usize::from(u8::from(idx))] += count;
+                }
+            } else {
+                for (candidate, count, _) in &*self.remaining {
+                    let idx = PackedCorrectness::packed(Correctness::compute(candidate, word));
+                    totals[usize::from(u8::from(idx))] += count;
+                }
+            }
+
+            let sum: f64 = totals
+                .into_iter()
+                .filter(|t| *t != 0.0)
+                .map(|p| {
+                    let p_of_this_pattern = p as f64 / remaining_p as f64;
+                    p_of_this_pattern * p_of_this_pattern.log2()
+                })
+                .sum();
+
+            let p_word = count as f64 / remaining_p as f64;
+            let e_info = -sum;
+            let goodness = match self.options.rank_by {
+                Rank::First => unreachable!("early return above"),
+                Rank::ExpectedScore => {
+                    // NOTE: Higher is better, so we negate the result.
+                    -(p_word * (score + 1.0)
+                        + (1.0 - p_word) * (score + est_steps_left(remaining_entropy - e_info)))
+                }
+                Rank::WeightedInformation => p_word * e_info,
+                Rank::InfoPlusProbability => p_word + e_info,
+                Rank::ExpectedInformation => e_info,
+            };
+            // Which one gives us a lower (expected) score?
+            Candidate {
+                word,
+                goodness,
+                idx: word_idx,
+            }
         };
-        let best = self
-            .remaining
-            .par_iter()
-            .take(stop)
-            .map(|&(word, count, word_idx)| {
-                // considering a world where we _did_ guess `word` and got `pattern` as the
-                // correctness. now, compute what _then_ is left.
 
-                // Rather than iterate over the patterns sequentially and add up the counts of words
-                // that result in that pattern, we can instead keep a running total for each pattern
-                // simultaneously by storing them in an array. We can do this since each candidate-word
-                // pair deterministically produces only one mask.
-                let mut totals = [0.0f64; MAX_MASK_ENUM];
-
-                if self.options.cache {
-                    let row = &COMPUTES.get().unwrap()[word_idx];
-                    for (candidate, count, candidate_idx) in &*self.remaining {
-                        let idx = get_packed(row, word, candidate, *candidate_idx);
-                        totals[usize::from(u8::from(idx))] += count;
-                    }
-                } else {
-                    for (candidate, count, _) in &*self.remaining {
-                        let idx = PackedCorrectness::packed(Correctness::compute(candidate, word));
-                        totals[usize::from(u8::from(idx))] += count;
-                    }
-                }
-
-                let sum: f64 = totals
-                    .into_iter()
-                    .filter(|t| *t != 0.0)
-                    .map(|p| {
-                        let p_of_this_pattern = p as f64 / remaining_p as f64;
-                        p_of_this_pattern * p_of_this_pattern.log2()
-                    })
-                    .sum();
-
-                let p_word = count as f64 / remaining_p as f64;
-                let e_info = -sum;
-                let goodness = match self.options.rank_by {
-                    Rank::First => unreachable!("early return above"),
-                    Rank::ExpectedScore => {
-                        // NOTE: Higher is better, so we negate the result.
-                        -(p_word * (score + 1.0)
-                            + (1.0 - p_word) * (score + est_steps_left(remaining_entropy - e_info)))
-                    }
-                    Rank::WeightedInformation => p_word * e_info,
-                    Rank::InfoPlusProbability => p_word + e_info,
-                    Rank::ExpectedInformation => e_info,
-                };
-                // Which one gives us a lower (expected) score?
-                Candidate {
-                    word,
-                    goodness,
-                    idx: word_idx,
-                }
-            })
-            .max_by(|a, b| match a.goodness.partial_cmp(&b.goodness).unwrap() {
-                Ordering::Equal => b.idx.cmp(&a.idx),
-                ord => ord,
-            });
+        let stop = if self.options.cutoff {
+            (self.remaining.len() / 3).max(20).min(self.remaining.len())
+        } else {
+            self.remaining.len()
+        };
+        // only running thread pool on larger lists give ~10% speed up
+        let best = if stop > 25 {
+            self.remaining
+                .par_iter()
+                .take(stop)
+                .map(get_candidate)
+                .max_by(|a, b| match a.goodness.partial_cmp(&b.goodness).unwrap() {
+                    Ordering::Equal => b.idx.cmp(&a.idx),
+                    ord => ord,
+                })
+        } else {
+            self.remaining
+                .iter()
+                .take(stop)
+                .map(get_candidate)
+                .max_by(|a, b| match a.goodness.partial_cmp(&b.goodness).unwrap() {
+                    Ordering::Equal => b.idx.cmp(&a.idx),
+                    ord => ord,
+                })
+        };
         let best = best.unwrap();
         self.last_guess_idx = Some(best.idx);
         best.word.to_string()
