@@ -335,7 +335,7 @@ impl Guesser for Solver {
 
         let mut best: Option<Candidate> = None;
         let mut i = 0;
-        let stop = (self.remaining.len() / 3).max(20);
+        let stop = (self.remaining.len() / 3).max(20).min(self.remaining.len());
         let consider = if self.options.hard_mode {
             &*self.remaining
         } else if self.options.sigmoid {
