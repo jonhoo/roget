@@ -1,5 +1,6 @@
 use crate::{Correctness, Guess, Guesser, PackedCorrectness, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
+use rayon::current_num_threads;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -391,9 +392,8 @@ impl Guesser for Solver {
                 },
             )
         };
-
-        // only running thread pool on larger lists give ~10% speed up
-        let best = if stop > 25 {
+        // only running thread pool on larger lists give minor speed up, ~5% in default config with threads
+        let best = if current_num_threads() > 1 && stop > 25 {
             consider
                 .par_iter()
                 .take(stop)

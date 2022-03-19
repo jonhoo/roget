@@ -1,4 +1,5 @@
 use clap::{ArgEnum, Parser};
+use rayon::ThreadPoolBuilder;
 use roget::{Guesser, Solver};
 
 const GAMES: &str = include_str!("../answers.txt");
@@ -37,6 +38,15 @@ struct Args {
     /// If not passed, all Wordle games are run.
     #[clap(short, long)]
     games: Option<usize>,
+
+    /// Sets the number of threads to use in thread pool.
+    ///
+    /// By default, only one thread is used.
+    ///
+    /// Specifying this with no value or a value of 0 uses the
+    /// default number of threads for rayon.
+    #[clap(short, long, default_value = "1", default_missing_value = "0")]
+    threads: usize,
 }
 
 #[derive(ArgEnum, Debug, Clone, Copy)]
@@ -80,6 +90,11 @@ fn main() {
         Rank::InfoPlusProbability => roget::Rank::InfoPlusProbability,
         Rank::ExpectedInformation => roget::Rank::ExpectedInformation,
     };
+
+    ThreadPoolBuilder::new()
+        .num_threads(args.threads)
+        .build_global()
+        .unwrap();
     play(move || solver.build(), args.games);
 }
 
