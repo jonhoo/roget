@@ -5,8 +5,10 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::sync::Mutex;
 
+/// The initial set of words without any smoothing
+static INITIAL_COUNTS: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
 /// The initial set of words after applying sigmoid smoothing.
-static INITIAL: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
+static INITIAL_SIGMOID: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
 
 /// A per-thread cache of cached `Correctness` for each word pair.
 ///
@@ -137,6 +139,9 @@ pub struct Options {
 
     /// If true, only the most likely 1/3 of candidates are considered at each step.
     pub cutoff: bool,
+
+    /// If true, solver may not guess known-wrong words.
+    pub hard_mode: bool,
 }
 
 impl Default for Options {
@@ -146,41 +151,47 @@ impl Default for Options {
             rank_by: Rank::ExpectedScore,
             cache: true,
             cutoff: true,
+            hard_mode: true,
         }
     }
 }
 
 impl Options {
     pub fn build(self) -> Solver {
-        let remaining = Cow::Borrowed(INITIAL.get_or_init(|| {
-            let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
+        let remaining = if self.sigmoid {
+            INITIAL_SIGMOID.get_or_init(|| {
+                let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
 
-            if PRINT_SIGMOID {
-                for &(word, count) in DICTIONARY.iter().rev() {
-                    let p = count as f64 / sum as f64;
-                    println!(
-                        "{} {:.6}% -> {:.6}% ({})",
-                        word,
-                        100.0 * p,
-                        100.0 * sigmoid(p),
-                        count
-                    );
-                }
-            }
-
-            DICTIONARY
-                .iter()
-                .copied()
-                .enumerate()
-                .map(|(idx, (word, count))| {
-                    if self.sigmoid {
-                        (word, sigmoid(count as f64 / sum as f64), idx)
-                    } else {
-                        (word, count as f64, idx)
+                if PRINT_SIGMOID {
+                    for &(word, count) in DICTIONARY.iter().rev() {
+                        let p = count as f64 / sum as f64;
+                        println!(
+                            "{} {:.6}% -> {:.6}% ({})",
+                            word,
+                            100.0 * p,
+                            100.0 * sigmoid(p),
+                            count
+                        );
                     }
-                })
-                .collect()
-        }));
+                }
+
+                DICTIONARY
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(idx, (word, count))| (word, sigmoid(count as f64 / sum as f64), idx))
+                    .collect()
+            })
+        } else {
+            INITIAL_COUNTS.get_or_init(|| {
+                DICTIONARY
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(idx, (word, count))| (word, count as f64, idx))
+                    .collect()
+            })
+        };
 
         if self.cache {
             COMPUTES.get_or_init(|| {
@@ -209,7 +220,7 @@ impl Options {
         }
 
         Solver {
-            remaining,
+            remaining: Cow::Borrowed(remaining),
             entropy: Vec::new(),
             last_guess_idx: None,
 
@@ -277,11 +288,12 @@ impl Guesser for Solver {
             // NOTE: I did a manual run with this commented out and it indeed produced "tares" as
             // the first guess. It slows down the run by a lot though.
             return "tares".to_string();
-        } else if self.options.rank_by == Rank::First {
+        } else if self.options.rank_by == Rank::First || self.remaining.len() == 1 {
             let w = self.remaining.first().unwrap();
             self.last_guess_idx = Some(w.2);
             return w.0.to_string();
         }
+        assert!(!self.remaining.is_empty());
 
         let remaining_p: f64 = self.remaining.iter().map(|&(_, p, _)| p).sum();
         let remaining_entropy = -self
@@ -304,16 +316,19 @@ impl Guesser for Solver {
             // pair deterministically produces only one mask.
             let mut totals = [0.0f64; MAX_MASK_ENUM];
 
+            let mut in_remaining = false;
             if self.options.cache {
                 let row: &Mutex<[PackedCorrectness; DICTIONARY.len()]> =
                     &COMPUTES.get().unwrap()[word_idx];
                 let mut row = row.lock().unwrap();
                 for (candidate, count, candidate_idx) in &*self.remaining {
+                    in_remaining |= word_idx == *candidate_idx;
                     let idx = get_packed(&mut *row, word, candidate, *candidate_idx);
                     totals[usize::from(idx)] += count;
                 }
             } else {
-                for (candidate, count, _) in &*self.remaining {
+                for (candidate, count, candidate_idx) in &*self.remaining {
+                    in_remaining |= word_idx == *candidate_idx;
                     let idx = PackedCorrectness::packed(Correctness::compute(candidate, word));
                     totals[usize::from(idx)] += count;
                 }
@@ -328,7 +343,12 @@ impl Guesser for Solver {
                 })
                 .sum();
 
-            let p_word = count as f64 / remaining_p as f64;
+            let p_word = if in_remaining {
+                count as f64 / remaining_p as f64
+            } else {
+                // TODO: penalize further.
+                0.0
+            };
             let e_info = -sum;
             let goodness = match self.options.rank_by {
                 Rank::First => unreachable!("early return above"),
@@ -354,9 +374,27 @@ impl Guesser for Solver {
         } else {
             self.remaining.len()
         };
+
+        let (stop, consider) = if self.options.hard_mode {
+            (stop, &*self.remaining)
+        } else {
+            (
+                if self.options.cutoff {
+                    self.remaining[stop - 1].2 + 1
+                } else {
+                    usize::MAX
+                },
+                if self.options.sigmoid {
+                    INITIAL_SIGMOID.get().unwrap()
+                } else {
+                    INITIAL_COUNTS.get().unwrap()
+                },
+            )
+        };
+
         // only running thread pool on larger lists give ~10% speed up
         let best = if stop > 25 {
-            self.remaining
+            consider
                 .par_iter()
                 .take(stop)
                 .map(get_candidate)
@@ -365,7 +403,7 @@ impl Guesser for Solver {
                     ord => ord,
                 })
         } else {
-            self.remaining
+            consider
                 .iter()
                 .take(stop)
                 .map(get_candidate)
@@ -375,6 +413,7 @@ impl Guesser for Solver {
                 })
         };
         let best = best.unwrap();
+        assert_ne!(best.goodness, 0.0);
         self.last_guess_idx = Some(best.idx);
         best.word.to_string()
     }
