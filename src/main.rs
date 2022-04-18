@@ -18,7 +18,7 @@ struct Args {
     #[clap(short, long, arg_enum, default_value = "expected-score")]
     rank_by: Rank,
 
-    /// By default, correcness computation are cached. This flag disables that.
+    /// By default, correctness computation are cached. This flag disables that.
     #[clap(long)]
     no_cache: bool,
 
