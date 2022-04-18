@@ -1,27 +1,27 @@
 use crate::{Correctness, Guess, Guesser, PackedCorrectness, DICTIONARY, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
-use once_cell::unsync::OnceCell as UnSyncOnceCell;
+use rayon::current_num_threads;
+use rayon::prelude::*;
 use std::borrow::Cow;
-use std::cell::Cell;
+use std::cmp::Ordering;
+use std::sync::Mutex;
 
+type InitialWords = (
+    Vec<(&'static str, f64, usize, usize)>,
+    [(usize, usize); MAX_MASK_ENUM],
+);
 /// The initial set of words without any smoothing
-static INITIAL_COUNTS: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
+static INITIAL_COUNTS: OnceCell<InitialWords> = OnceCell::new();
 /// The initial set of words after applying sigmoid smoothing.
-static INITIAL_SIGMOID: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
+static INITIAL_SIGMOID: OnceCell<InitialWords> = OnceCell::new();
 
-/// A per-thread cache of cached `Correctness` for each word pair.
-///
-/// We make this thread-local so that access to it is as cheap as we can get it.
-///
-/// We store a `Box` because the array is quite large, and we're unlikely to have the stack space
-/// needed to store the whole thing on a given thread's stack.
-type Cache = [[Cell<Option<PackedCorrectness>>; DICTIONARY.len()]; DICTIONARY.len()];
-thread_local! {
-    static COMPUTES: UnSyncOnceCell<Box<Cache>> = Default::default();
-}
+/// A cache of `Correctness` for each word pair.
+type Cache = [Mutex<[PackedCorrectness; DICTIONARY.len()]>; DICTIONARY.len()];
+static COMPUTES: OnceCell<Box<Cache>> = OnceCell::new();
 
 pub struct Solver {
-    remaining: Cow<'static, Vec<(&'static str, f64, usize)>>,
+    remaining: Cow<'static, [(&'static str, f64, usize, usize)]>,
+    ranges: &'static [(usize, usize); MAX_MASK_ENUM],
     entropy: Vec<f64>,
     options: Options,
     last_guess_idx: Option<usize>,
@@ -56,7 +56,7 @@ impl Default for Solver {
 //   E[guesses] = ln(entropy * 3.869 + 3.679)
 //
 // and an average score of 3.7176 (worse than the first estimate). Further iterations did not
-// change the parameters much, so I stuck with that last estimat.
+// change the parameters much, so I stuck with that last estimate.
 //
 // Below are also the formulas and average scores when using different regressions. Interestingly,
 // the regression that does the best also tends to overestimate the number of guesses remaining,
@@ -107,6 +107,8 @@ fn sigmoid(p: f64) -> f64 {
 }
 const PRINT_SIGMOID: bool = false;
 
+const FIRST_WORD: &str = "tares";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Rank {
@@ -135,7 +137,7 @@ pub struct Options {
     /// If true, candidates will be ranked based on expected score.
     pub rank_by: Rank,
 
-    /// If true, correcness computation will be cached.
+    /// If true, correctness computation will be cached.
     pub cache: bool,
 
     /// If true, only the most likely 1/3 of candidates are considered at each step.
@@ -159,85 +161,92 @@ impl Default for Options {
 
 impl Options {
     pub fn build(self) -> Solver {
-        let remaining = if self.sigmoid {
-            INITIAL_SIGMOID.get_or_init(|| {
-                let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
+        fn init_initials<F>(map: F) -> InitialWords
+        where
+            F: Fn(usize, usize) -> f64,
+        {
+            let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
 
-                if PRINT_SIGMOID {
-                    for &(word, count) in DICTIONARY.iter().rev() {
-                        let p = count as f64 / sum as f64;
-                        println!(
-                            "{} {:.6}% -> {:.6}% ({})",
-                            word,
-                            100.0 * p,
-                            100.0 * sigmoid(p),
-                            count
-                        );
-                    }
+            if PRINT_SIGMOID {
+                for &(word, count) in DICTIONARY.iter().rev() {
+                    let p = count as f64 / sum as f64;
+                    println!(
+                        "{} {:.6}% -> {:.6}% ({})",
+                        word,
+                        100.0 * p,
+                        100.0 * sigmoid(p),
+                        count
+                    );
                 }
+            }
 
-                DICTIONARY
-                    .iter()
-                    .copied()
+            let mut vec: Vec<Vec<(&str, f64, usize)>> = Vec::new();
+            for _ in 0..MAX_MASK_ENUM {
+                vec.push(Vec::new());
+            }
+
+            for (orig_idx, (word, count)) in DICTIONARY.iter().copied().enumerate() {
+                let mask = PackedCorrectness::packed(Correctness::compute(word, FIRST_WORD));
+                vec[usize::from(mask)].push((word, map(count, sum), orig_idx))
+            }
+
+            let mut prev = 0usize;
+            let mut ranges = [(0, 0); MAX_MASK_ENUM];
+            for (inner, range) in vec.iter().zip(ranges.iter_mut()) {
+                *range = (prev, (prev + inner.len()));
+                prev += inner.len();
+            }
+            (
+                vec.into_iter()
+                    .flatten()
                     .enumerate()
-                    .map(|(idx, (word, count))| (word, sigmoid(count as f64 / sum as f64), idx))
-                    .collect()
+                    .map(|(idx, (word, count, orig_idx))| (word, count, orig_idx, idx))
+                    .collect(),
+                ranges,
+            )
+        }
+
+        let (remaining, ranges) = if self.sigmoid {
+            INITIAL_SIGMOID.get_or_init(|| {
+                init_initials(|word_count, total_count| {
+                    sigmoid(word_count as f64 / total_count as f64)
+                })
             })
         } else {
-            INITIAL_COUNTS.get_or_init(|| {
-                DICTIONARY
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .map(|(idx, (word, count))| (word, count as f64, idx))
-                    .collect()
-            })
+            INITIAL_COUNTS.get_or_init(|| init_initials(|word_count, _| word_count as f64))
         };
 
         if self.cache {
-            COMPUTES.with(|c| {
-                c.get_or_init(|| {
-                    // This is really silly.
-                    // We'd like to just do `Box::default()`, but that doesn't work since `Default`
-                    // isn't implemented for arbitrarily long arrays. We can't use `Box::new` since
-                    // that'll create the (huge) array on the _stack_ first before then copying it
-                    // to the heap. And support for creation of values directly on the heap (the
-                    // `box` keyword) is an unstable nightly-only feature.
-                    //
-                    // So, we use unsafe.
-
-                    // First, we sanity check that the byte value 0 is equivalent to our `None`
-                    // value.
-                    let c = &Cell::new(None::<PackedCorrectness>);
-                    assert_eq!(std::mem::size_of_val(c), 1);
-                    let c = c as *const _;
-                    let c = c as *const u8;
-                    assert_eq!(unsafe { *c }, 0);
-
-                    // Then, we allocate the number of bytes we need directly on the heap.
-                    // And we request that they're all zero, which by the above we know matches the
-                    // value we expect for `Cache`.
-                    let mem = unsafe {
-                        std::alloc::alloc_zeroed(
-                            std::alloc::Layout::from_size_align(
-                                std::mem::size_of::<Cache>(),
-                                std::mem::align_of::<Cache>(),
-                            )
-                            .unwrap(),
+            COMPUTES.get_or_init(|| {
+                // This is really silly.
+                // We'd like to just do `Box::default()`, but that doesn't work since `Default`
+                // isn't implemented for arbitrarily long arrays. We can't use `Box::new` since
+                // that'll create the (huge) array on the _stack_ first before then copying it
+                // to the heap. And support for creation of values directly on the heap (the
+                // `box` keyword) is an unstable nightly-only feature.
+                //
+                // So, we use unsafe. We allocate the number of bytes we need directly on the heap.
+                // And we request that they're all zero.
+                let mem = unsafe {
+                    std::alloc::alloc_zeroed(
+                        std::alloc::Layout::from_size_align(
+                            std::mem::size_of::<Cache>(),
+                            std::mem::align_of::<Cache>(),
                         )
-                    };
+                        .unwrap(),
+                    )
+                };
 
-                    // And then we cast it to a Box of the appropriate type, which should be safe.
-                    unsafe { Box::from_raw(mem as *mut _) }
-                });
+                // And then we cast it to a Box of the appropriate type, which should be safe.
+                unsafe { Box::from_raw(mem as *mut _) }
             });
         }
 
         Solver {
             remaining: Cow::Borrowed(remaining),
+            ranges,
             entropy: Vec::new(),
             last_guess_idx: None,
-
             options: self,
         }
     }
@@ -245,21 +254,8 @@ impl Options {
 
 // This inline gives about a 13% speedup.
 #[inline]
-fn get_packed(
-    row: &[Cell<Option<PackedCorrectness>>],
-    guess: &str,
-    answer: &str,
-    answer_idx: usize,
-) -> PackedCorrectness {
-    let cell = &row[answer_idx];
-    match cell.get() {
-        Some(a) => a,
-        None => {
-            let correctness = PackedCorrectness::from(Correctness::compute(answer, guess));
-            cell.set(Some(correctness));
-            correctness
-        }
-    }
+fn get_packed(row: &mut [PackedCorrectness], guess: &str, answer: &str, answer_idx: usize) -> u8 {
+    row[answer_idx].get_or_init(guess, answer)
 }
 
 impl Solver {
@@ -273,12 +269,12 @@ impl Solver {
         if matches!(self.remaining, Cow::Owned(_)) {
             self.remaining
                 .to_mut()
-                .retain(|&(word, _, word_idx)| cmp(word, word_idx));
+                .retain(|&(word, _, _, word_idx)| cmp(word, word_idx));
         } else {
             self.remaining = Cow::Owned(
                 self.remaining
                     .iter()
-                    .filter(|(word, _, word_idx)| cmp(word, *word_idx))
+                    .filter(|(word, _, _, word_idx)| cmp(word, *word_idx))
                     .copied()
                     .collect(),
             );
@@ -291,13 +287,23 @@ impl Guesser for Solver {
         let score = history.len() as f64;
 
         if let Some(last) = history.last() {
-            if self.options.cache {
-                let reference = PackedCorrectness::from(last.mask);
-                COMPUTES.with(|c| {
-                    let row = &c.get().unwrap()[self.last_guess_idx.unwrap()];
-                    self.trim(|word, word_idx| {
-                        reference == get_packed(row, &last.word, word, word_idx)
-                    });
+            if history.len() == 1 && last.word == FIRST_WORD {
+                let (start, end) = self.ranges[usize::from(PackedCorrectness::packed(last.mask))];
+                let slice = &if self.options.sigmoid {
+                    INITIAL_SIGMOID.get()
+                } else {
+                    INITIAL_COUNTS.get()
+                }
+                .unwrap()
+                .0[start..end];
+                self.remaining = Cow::Borrowed(slice)
+            } else if self.options.cache {
+                let reference = PackedCorrectness::packed(last.mask);
+                let mut row = COMPUTES.get().unwrap()[self.last_guess_idx.unwrap()]
+                    .lock()
+                    .unwrap();
+                self.trim(|word, word_idx| {
+                    reference == get_packed(&mut *row, &last.word, word, word_idx)
                 });
             } else {
                 self.trim(|word, _| last.matches(word));
@@ -308,13 +314,13 @@ impl Guesser for Solver {
             self.last_guess_idx = Some(
                 self.remaining
                     .iter()
-                    .find(|(word, _, _)| &**word == "tares")
-                    .map(|&(_, _, idx)| idx)
+                    .find(|(word, _, _, _)| &**word == "tares")
+                    .map(|&(_, _, _, idx)| idx)
                     .unwrap(),
             );
             // NOTE: I did a manual run with this commented out and it indeed produced "tares" as
             // the first guess. It slows down the run by a lot though.
-            return "tares".to_string();
+            return FIRST_WORD.to_string();
         } else if self.options.rank_by == Rank::First || self.remaining.len() == 1 {
             let w = self.remaining.first().unwrap();
             self.last_guess_idx = Some(w.2);
@@ -322,28 +328,18 @@ impl Guesser for Solver {
         }
         assert!(!self.remaining.is_empty());
 
-        let remaining_p: f64 = self.remaining.iter().map(|&(_, p, _)| p).sum();
+        let remaining_p: f64 = self.remaining.iter().map(|&(_, p, _, _)| p).sum();
         let remaining_entropy = -self
             .remaining
             .iter()
-            .map(|&(_, p, _)| {
+            .map(|&(_, p, _, _)| {
                 let p = p / remaining_p;
                 p * p.log2()
             })
             .sum::<f64>();
         self.entropy.push(remaining_entropy);
 
-        let mut best: Option<Candidate> = None;
-        let mut i = 0;
-        let stop = (self.remaining.len() / 3).max(20).min(self.remaining.len());
-        let consider = if self.options.hard_mode {
-            &*self.remaining
-        } else if self.options.sigmoid {
-            INITIAL_SIGMOID.get().unwrap()
-        } else {
-            INITIAL_COUNTS.get().unwrap()
-        };
-        for &(word, count, word_idx) in consider {
+        let get_candidate = |&(word, count, orig_idx, word_idx)| {
             // considering a world where we _did_ guess `word` and got `pattern` as the
             // correctness. now, compute what _then_ is left.
 
@@ -355,19 +351,19 @@ impl Guesser for Solver {
 
             let mut in_remaining = false;
             if self.options.cache {
-                COMPUTES.with(|c| {
-                    let row = &c.get().unwrap()[word_idx];
-                    for (candidate, count, candidate_idx) in &*self.remaining {
-                        in_remaining |= word_idx == *candidate_idx;
-                        let idx = get_packed(row, word, candidate, *candidate_idx);
-                        totals[usize::from(u8::from(idx))] += count;
-                    }
-                });
-            } else {
-                for (candidate, count, candidate_idx) in &*self.remaining {
+                let row: &Mutex<[PackedCorrectness; DICTIONARY.len()]> =
+                    &COMPUTES.get().unwrap()[word_idx];
+                let mut row = row.lock().unwrap();
+                for (candidate, count, _, candidate_idx) in &*self.remaining {
                     in_remaining |= word_idx == *candidate_idx;
-                    let idx = PackedCorrectness::from(Correctness::compute(candidate, word));
-                    totals[usize::from(u8::from(idx))] += count;
+                    let idx = get_packed(&mut *row, word, candidate, *candidate_idx);
+                    totals[usize::from(idx)] += count;
+                }
+            } else {
+                for (candidate, count, _, candidate_idx) in &*self.remaining {
+                    in_remaining |= word_idx == *candidate_idx;
+                    let idx = PackedCorrectness::packed(Correctness::compute(candidate, word));
+                    totals[usize::from(idx)] += count;
                 }
             }
 
@@ -398,30 +394,57 @@ impl Guesser for Solver {
                 Rank::InfoPlusProbability => p_word + e_info,
                 Rank::ExpectedInformation => e_info,
             };
-            if let Some(c) = best {
-                // Which one gives us a lower (expected) score?
-                if goodness > c.goodness {
-                    best = Some(Candidate {
-                        word,
-                        goodness,
-                        idx: word_idx,
-                    });
-                }
-            } else {
-                best = Some(Candidate {
-                    word,
-                    goodness,
-                    idx: word_idx,
-                });
+            // Which one gives us a lower (expected) score?
+            Candidate {
+                word,
+                goodness,
+                orig_idx,
+                idx: word_idx,
             }
+        };
 
-            if self.options.cutoff && in_remaining {
-                i += 1;
-                if i >= stop {
-                    break;
-                }
-            }
-        }
+        let stop = if self.options.cutoff {
+            (self.remaining.len() / 3).max(20).min(self.remaining.len())
+        } else {
+            self.remaining.len()
+        };
+
+        let (stop, consider) = if self.options.hard_mode {
+            (stop, &*self.remaining)
+        } else {
+            (
+                if self.options.cutoff {
+                    self.remaining[stop - 1].2 + 1
+                } else {
+                    usize::MAX
+                },
+                if self.options.sigmoid {
+                    INITIAL_SIGMOID.get().unwrap().0.as_slice()
+                } else {
+                    INITIAL_COUNTS.get().unwrap().0.as_slice()
+                },
+            )
+        };
+
+        let best = if current_num_threads() > 1 {
+            consider
+                .par_iter()
+                .take(stop)
+                .map(get_candidate)
+                .max_by(|a, b| match a.goodness.partial_cmp(&b.goodness).unwrap() {
+                    Ordering::Equal => b.orig_idx.cmp(&a.orig_idx),
+                    ord => ord,
+                })
+        } else {
+            consider
+                .iter()
+                .take(stop)
+                .map(get_candidate)
+                .max_by(|a, b| match a.goodness.partial_cmp(&b.goodness).unwrap() {
+                    Ordering::Equal => b.orig_idx.cmp(&a.orig_idx),
+                    ord => ord,
+                })
+        };
         let best = best.unwrap();
         assert_ne!(best.goodness, 0.0);
         self.last_guess_idx = Some(best.idx);
@@ -446,5 +469,6 @@ impl Guesser for Solver {
 struct Candidate {
     word: &'static str,
     goodness: f64,
+    orig_idx: usize,
     idx: usize,
 }
