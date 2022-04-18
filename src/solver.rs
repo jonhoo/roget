@@ -56,7 +56,7 @@ impl Default for Solver {
 //   E[guesses] = ln(entropy * 3.869 + 3.679)
 //
 // and an average score of 3.7176 (worse than the first estimate). Further iterations did not
-// change the parameters much, so I stuck with that last estimat.
+// change the parameters much, so I stuck with that last estimate.
 //
 // Below are also the formulas and average scores when using different regressions. Interestingly,
 // the regression that does the best also tends to overestimate the number of guesses remaining,
@@ -187,7 +187,7 @@ impl Options {
 
             for (orig_idx, (word, count)) in DICTIONARY.iter().copied().enumerate() {
                 let mask = PackedCorrectness::packed(Correctness::compute(word, FIRST_WORD));
-                vec[mask as usize].push((word, map(count, sum), orig_idx))
+                vec[usize::from(mask)].push((word, map(count, sum), orig_idx))
             }
 
             let mut prev = 0usize;
@@ -288,8 +288,7 @@ impl Guesser for Solver {
 
         if let Some(last) = history.last() {
             if history.len() == 1 && last.word == FIRST_WORD {
-                let (start, end) =
-                    self.ranges[PackedCorrectness::packed(last.mask) as usize].clone();
+                let (start, end) = self.ranges[usize::from(PackedCorrectness::packed(last.mask))];
                 let slice = &if self.options.sigmoid {
                     INITIAL_SIGMOID.get()
                 } else {
