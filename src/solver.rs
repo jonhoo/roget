@@ -137,7 +137,7 @@ pub struct Options {
     /// If true, candidates will be ranked based on expected score.
     pub rank_by: Rank,
 
-    /// If true, correcness computation will be cached.
+    /// If true, correctness computation will be cached.
     pub cache: bool,
 
     /// If true, only the most likely 1/3 of candidates are considered at each step.
