@@ -6,10 +6,14 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::sync::Mutex;
 
+type InitialWords = (
+    Vec<(&'static str, f64, usize)>,
+    [(usize, usize); MAX_MASK_ENUM],
+);
 /// The initial set of words without any smoothing
-static INITIAL_COUNTS: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
+static INITIAL_COUNTS: OnceCell<InitialWords> = OnceCell::new();
 /// The initial set of words after applying sigmoid smoothing.
-static INITIAL_SIGMOID: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::new();
+static INITIAL_SIGMOID: OnceCell<InitialWords> = OnceCell::new();
 
 /// A per-thread cache of cached `Correctness` for each word pair.
 ///
@@ -21,7 +25,8 @@ type Cache = [Mutex<[PackedCorrectness; DICTIONARY.len()]>; DICTIONARY.len()];
 static COMPUTES: OnceCell<Box<Cache>> = OnceCell::new();
 
 pub struct Solver {
-    remaining: Cow<'static, Vec<(&'static str, f64, usize)>>,
+    remaining: Cow<'static, [(&'static str, f64, usize)]>,
+    ranges: &'static [(usize, usize); MAX_MASK_ENUM],
     entropy: Vec<f64>,
     options: Options,
     last_guess_idx: Option<usize>,
@@ -107,6 +112,8 @@ fn sigmoid(p: f64) -> f64 {
 }
 const PRINT_SIGMOID: bool = false;
 
+const FIRST_WORD: &str = "tares";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Rank {
@@ -159,39 +166,59 @@ impl Default for Options {
 
 impl Options {
     pub fn build(self) -> Solver {
-        let remaining = if self.sigmoid {
-            INITIAL_SIGMOID.get_or_init(|| {
-                let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
+        fn init_initials<F>(map: F) -> InitialWords
+        where
+            F: Fn(usize, usize) -> f64,
+        {
+            let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
 
-                if PRINT_SIGMOID {
-                    for &(word, count) in DICTIONARY.iter().rev() {
-                        let p = count as f64 / sum as f64;
-                        println!(
-                            "{} {:.6}% -> {:.6}% ({})",
-                            word,
-                            100.0 * p,
-                            100.0 * sigmoid(p),
-                            count
-                        );
-                    }
+            if PRINT_SIGMOID {
+                for &(word, count) in DICTIONARY.iter().rev() {
+                    let p = count as f64 / sum as f64;
+                    println!(
+                        "{} {:.6}% -> {:.6}% ({})",
+                        word,
+                        100.0 * p,
+                        100.0 * sigmoid(p),
+                        count
+                    );
                 }
+            }
 
-                DICTIONARY
-                    .iter()
-                    .copied()
+            let mut vec: Vec<Vec<(&str, f64)>> = Vec::new();
+            for _ in 0..MAX_MASK_ENUM {
+                vec.push(Vec::new());
+            }
+
+            for (word, count) in DICTIONARY.iter().copied() {
+                let mask = PackedCorrectness::packed(Correctness::compute(word, FIRST_WORD));
+                vec[mask as usize].push((word, map(count, sum)))
+            }
+
+            let mut prev = 0usize;
+            let mut ranges = [(0, 0); MAX_MASK_ENUM];
+            for (inner, range) in vec.iter().zip(ranges.iter_mut()) {
+                *range = (prev, (prev + inner.len()));
+                prev += inner.len();
+            }
+            (
+                vec.into_iter()
+                    .flatten()
                     .enumerate()
-                    .map(|(idx, (word, count))| (word, sigmoid(count as f64 / sum as f64), idx))
-                    .collect()
+                    .map(|(idx, (word, count))| (word, count, idx))
+                    .collect(),
+                ranges,
+            )
+        }
+
+        let (remaining, ranges) = if self.sigmoid {
+            INITIAL_SIGMOID.get_or_init(|| {
+                init_initials(|word_count, total_count| {
+                    sigmoid(word_count as f64 / total_count as f64)
+                })
             })
         } else {
-            INITIAL_COUNTS.get_or_init(|| {
-                DICTIONARY
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .map(|(idx, (word, count))| (word, count as f64, idx))
-                    .collect()
-            })
+            INITIAL_COUNTS.get_or_init(|| init_initials(|word_count, _| word_count as f64))
         };
 
         if self.cache {
@@ -222,9 +249,9 @@ impl Options {
 
         Solver {
             remaining: Cow::Borrowed(remaining),
+            ranges,
             entropy: Vec::new(),
             last_guess_idx: None,
-
             options: self,
         }
     }
@@ -265,7 +292,18 @@ impl Guesser for Solver {
         let score = history.len() as f64;
 
         if let Some(last) = history.last() {
-            if self.options.cache {
+            if history.len() == 1 && last.word == FIRST_WORD {
+                let (start, end) =
+                    self.ranges[PackedCorrectness::packed(last.mask) as usize].clone();
+                let slice = &if self.options.sigmoid {
+                    INITIAL_SIGMOID.get()
+                } else {
+                    INITIAL_COUNTS.get()
+                }
+                .unwrap()
+                .0[start..end];
+                self.remaining = Cow::Borrowed(slice)
+            } else if self.options.cache {
                 let reference = PackedCorrectness::packed(last.mask);
                 let mut row = COMPUTES.get().unwrap()[self.last_guess_idx.unwrap()]
                     .lock()
@@ -288,7 +326,7 @@ impl Guesser for Solver {
             );
             // NOTE: I did a manual run with this commented out and it indeed produced "tares" as
             // the first guess. It slows down the run by a lot though.
-            return "tares".to_string();
+            return FIRST_WORD.to_string();
         } else if self.options.rank_by == Rank::First || self.remaining.len() == 1 {
             let w = self.remaining.first().unwrap();
             self.last_guess_idx = Some(w.2);
@@ -386,14 +424,14 @@ impl Guesser for Solver {
                     usize::MAX
                 },
                 if self.options.sigmoid {
-                    INITIAL_SIGMOID.get().unwrap()
+                    INITIAL_SIGMOID.get().unwrap().0.as_slice()
                 } else {
-                    INITIAL_COUNTS.get().unwrap()
+                    INITIAL_COUNTS.get().unwrap().0.as_slice()
                 },
             )
         };
-        // only running thread pool on larger lists give minor speed up, ~5% in default config with threads
-        let best = if current_num_threads() > 1 && stop > 25 {
+
+        let best = if current_num_threads() > 1 {
             consider
                 .par_iter()
                 .take(stop)
