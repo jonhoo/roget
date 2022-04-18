@@ -16,11 +16,6 @@ static INITIAL_COUNTS: OnceCell<InitialWords> = OnceCell::new();
 static INITIAL_SIGMOID: OnceCell<InitialWords> = OnceCell::new();
 
 /// A per-thread cache of cached `Correctness` for each word pair.
-///
-/// We make this thread-local so that access to it is as cheap as we can get it.
-///
-/// We store a `Box` because the array is quite large, and we're unlikely to have the stack space
-/// needed to store the whole thing on a given thread's stack.
 type Cache = [Mutex<[PackedCorrectness; DICTIONARY.len()]>; DICTIONARY.len()];
 static COMPUTES: OnceCell<Box<Cache>> = OnceCell::new();
 
