@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use std::sync::Mutex;
 
 type InitialWords = (
-    Vec<(&'static str, f64, usize)>,
+    Vec<(&'static str, f64, usize, usize)>,
     [(usize, usize); MAX_MASK_ENUM],
 );
 /// The initial set of words without any smoothing
@@ -20,7 +20,7 @@ type Cache = [Mutex<[PackedCorrectness; DICTIONARY.len()]>; DICTIONARY.len()];
 static COMPUTES: OnceCell<Box<Cache>> = OnceCell::new();
 
 pub struct Solver {
-    remaining: Cow<'static, [(&'static str, f64, usize)]>,
+    remaining: Cow<'static, [(&'static str, f64, usize, usize)]>,
     ranges: &'static [(usize, usize); MAX_MASK_ENUM],
     entropy: Vec<f64>,
     options: Options,
@@ -180,14 +180,14 @@ impl Options {
                 }
             }
 
-            let mut vec: Vec<Vec<(&str, f64)>> = Vec::new();
+            let mut vec: Vec<Vec<(&str, f64, usize)>> = Vec::new();
             for _ in 0..MAX_MASK_ENUM {
                 vec.push(Vec::new());
             }
 
-            for (word, count) in DICTIONARY.iter().copied() {
+            for (orig_idx, (word, count)) in DICTIONARY.iter().copied().enumerate() {
                 let mask = PackedCorrectness::packed(Correctness::compute(word, FIRST_WORD));
-                vec[mask as usize].push((word, map(count, sum)))
+                vec[mask as usize].push((word, map(count, sum), orig_idx))
             }
 
             let mut prev = 0usize;
@@ -200,7 +200,7 @@ impl Options {
                 vec.into_iter()
                     .flatten()
                     .enumerate()
-                    .map(|(idx, (word, count))| (word, count, idx))
+                    .map(|(idx, (word, count, orig_idx))| (word, count, orig_idx, idx))
                     .collect(),
                 ranges,
             )
@@ -269,12 +269,12 @@ impl Solver {
         if matches!(self.remaining, Cow::Owned(_)) {
             self.remaining
                 .to_mut()
-                .retain(|&(word, _, word_idx)| cmp(word, word_idx));
+                .retain(|&(word, _, _, word_idx)| cmp(word, word_idx));
         } else {
             self.remaining = Cow::Owned(
                 self.remaining
                     .iter()
-                    .filter(|(word, _, word_idx)| cmp(word, *word_idx))
+                    .filter(|(word, _, _, word_idx)| cmp(word, *word_idx))
                     .copied()
                     .collect(),
             );
@@ -315,8 +315,8 @@ impl Guesser for Solver {
             self.last_guess_idx = Some(
                 self.remaining
                     .iter()
-                    .find(|(word, _, _)| &**word == "tares")
-                    .map(|&(_, _, idx)| idx)
+                    .find(|(word, _, _, _)| &**word == "tares")
+                    .map(|&(_, _, _, idx)| idx)
                     .unwrap(),
             );
             // NOTE: I did a manual run with this commented out and it indeed produced "tares" as
@@ -329,18 +329,18 @@ impl Guesser for Solver {
         }
         assert!(!self.remaining.is_empty());
 
-        let remaining_p: f64 = self.remaining.iter().map(|&(_, p, _)| p).sum();
+        let remaining_p: f64 = self.remaining.iter().map(|&(_, p, _, _)| p).sum();
         let remaining_entropy = -self
             .remaining
             .iter()
-            .map(|&(_, p, _)| {
+            .map(|&(_, p, _, _)| {
                 let p = p / remaining_p;
                 p * p.log2()
             })
             .sum::<f64>();
         self.entropy.push(remaining_entropy);
 
-        let get_candidate = |&(word, count, word_idx)| {
+        let get_candidate = |&(word, count, orig_idx, word_idx)| {
             // considering a world where we _did_ guess `word` and got `pattern` as the
             // correctness. now, compute what _then_ is left.
 
@@ -355,13 +355,13 @@ impl Guesser for Solver {
                 let row: &Mutex<[PackedCorrectness; DICTIONARY.len()]> =
                     &COMPUTES.get().unwrap()[word_idx];
                 let mut row = row.lock().unwrap();
-                for (candidate, count, candidate_idx) in &*self.remaining {
+                for (candidate, count, _, candidate_idx) in &*self.remaining {
                     in_remaining |= word_idx == *candidate_idx;
                     let idx = get_packed(&mut *row, word, candidate, *candidate_idx);
                     totals[usize::from(idx)] += count;
                 }
             } else {
-                for (candidate, count, candidate_idx) in &*self.remaining {
+                for (candidate, count, _, candidate_idx) in &*self.remaining {
                     in_remaining |= word_idx == *candidate_idx;
                     let idx = PackedCorrectness::packed(Correctness::compute(candidate, word));
                     totals[usize::from(idx)] += count;
@@ -399,6 +399,7 @@ impl Guesser for Solver {
             Candidate {
                 word,
                 goodness,
+                orig_idx,
                 idx: word_idx,
             }
         };
@@ -432,7 +433,7 @@ impl Guesser for Solver {
                 .take(stop)
                 .map(get_candidate)
                 .max_by(|a, b| match a.goodness.partial_cmp(&b.goodness).unwrap() {
-                    Ordering::Equal => b.idx.cmp(&a.idx),
+                    Ordering::Equal => b.orig_idx.cmp(&a.orig_idx),
                     ord => ord,
                 })
         } else {
@@ -441,7 +442,7 @@ impl Guesser for Solver {
                 .take(stop)
                 .map(get_candidate)
                 .max_by(|a, b| match a.goodness.partial_cmp(&b.goodness).unwrap() {
-                    Ordering::Equal => b.idx.cmp(&a.idx),
+                    Ordering::Equal => b.orig_idx.cmp(&a.orig_idx),
                     ord => ord,
                 })
         };
@@ -469,5 +470,6 @@ impl Guesser for Solver {
 struct Candidate {
     word: &'static str,
     goodness: f64,
+    orig_idx: usize,
     idx: usize,
 }
