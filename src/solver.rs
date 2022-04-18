@@ -15,7 +15,7 @@ static INITIAL_COUNTS: OnceCell<InitialWords> = OnceCell::new();
 /// The initial set of words after applying sigmoid smoothing.
 static INITIAL_SIGMOID: OnceCell<InitialWords> = OnceCell::new();
 
-/// A per-thread cache of cached `Correctness` for each word pair.
+/// A cache of `Correctness` for each word pair.
 type Cache = [Mutex<[PackedCorrectness; DICTIONARY.len()]>; DICTIONARY.len()];
 static COMPUTES: OnceCell<Box<Cache>> = OnceCell::new();
 
