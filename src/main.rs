@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use clap::{ArgEnum, Parser};
 use roget::{Guesser, Solver};
 
@@ -40,6 +42,14 @@ struct Args {
     /// If not passed, all Wordle games are run.
     #[clap(short, long)]
     games: Option<usize>,
+
+    /// Launch in Interactive mode.
+    ///
+    /// If not passed, the program will run in automatic mode.
+    ///
+    /// If passed, the --games argument is ignored.
+    #[clap(short, long)]
+    interactive: bool,
 }
 
 #[derive(ArgEnum, Debug, Clone, Copy)]
@@ -83,7 +93,53 @@ fn main() {
         Rank::InfoPlusProbability => roget::Rank::InfoPlusProbability,
         Rank::ExpectedInformation => roget::Rank::ExpectedInformation,
     };
-    play(move || solver.build(), args.games);
+    if args.interactive {
+        play_interactive(move || solver.build());
+    } else {
+        play(move || solver.build(), args.games);
+    }
+}
+
+fn play_interactive<G>(mk: impl FnOnce() -> G)
+where
+    G: Guesser,
+{
+    let mut guesser = mk();
+    let mut history = Vec::new();
+    // Wordle only allows six guesses.
+    for _ in 1..=6 {
+        let guess = guesser.guess(&history);
+        let correctness = {
+            println!("Guess:  {}", guess.to_uppercase());
+            print!("Colors: ");
+            std::io::Write::flush(&mut std::io::stdout()).unwrap();
+            let mut answer = String::new();
+            std::io::stdin().read_line(&mut answer).unwrap();
+            answer
+                .trim()
+                .chars()
+                .enumerate()
+                .filter(|v| !v.1.is_whitespace())
+                .map(|v| (v.0, v.1.to_ascii_uppercase()))
+                .take(5)
+                .map(|(i, c)| match c {
+                    'C' => roget::Correctness::Correct,
+                    'M' => roget::Correctness::Misplaced,
+                    'W' => roget::Correctness::Wrong,
+                    _ => panic!("Invalid correctness char: '{c}' at pos {i}"),
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("Invalid correctness string")
+        };
+        if correctness == [roget::Correctness::Correct;5] {
+            return;
+        }
+        history.push(roget::Guess {
+            word: Cow::Owned(guess),
+            mask: correctness,
+        });
+    }
 }
 
 fn play<G>(mut mk: impl FnMut() -> G, max: Option<usize>)
