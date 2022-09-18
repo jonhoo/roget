@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use clap::{ArgEnum, Parser};
+use clap::{ArgEnum, ArgGroup, Parser};
 use roget::{Guesser, Solver};
 
 const GAMES: &str = include_str!("../answers.txt");
@@ -11,6 +11,11 @@ static GLOBAL_ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
+#[clap(group(
+    ArgGroup::new("mutex")
+        .required(false)
+        .args(&["interactive", "games"]),
+))]
 struct Args {
     /// By default, counts will be smoothed using a sigmoid. This flag disables that.
     #[clap(long)]
@@ -43,11 +48,9 @@ struct Args {
     #[clap(short, long)]
     games: Option<usize>,
 
-    /// Launch in Interactive mode.
+    /// Launch in interactive mode.
     ///
-    /// If not passed, the program will run in automatic mode.
-    ///
-    /// If passed, the --games argument is ignored.
+    /// The program will make a guess, and you are tasked to provide the correctness.
     #[clap(short, long)]
     interactive: bool,
 }
@@ -94,45 +97,29 @@ fn main() {
         Rank::ExpectedInformation => roget::Rank::ExpectedInformation,
     };
     if args.interactive {
-        play_interactive(move || solver.build());
+        play_interactive(solver.build());
     } else {
         play(move || solver.build(), args.games);
     }
 }
 
-fn play_interactive<G>(mk: impl FnOnce() -> G)
-where
-    G: Guesser,
-{
-    let mut guesser = mk();
-    let mut history = Vec::new();
+fn play_interactive(mut guesser: impl Guesser) {
+    let mut history = Vec::with_capacity(6);
+    println!("C: Correct / Green, M: Misplaced / Yellow, W: Wrong / Gray");
     // Wordle only allows six guesses.
     for _ in 1..=6 {
         let guess = guesser.guess(&history);
+        println!("Guess:  {}", guess.to_uppercase());
         let correctness = {
-            println!("Guess:  {}", guess.to_uppercase());
-            print!("Colors: ");
-            std::io::Write::flush(&mut std::io::stdout()).unwrap();
-            let mut answer = String::new();
-            std::io::stdin().read_line(&mut answer).unwrap();
-            answer
-                .trim()
-                .chars()
-                .enumerate()
-                .filter(|v| !v.1.is_whitespace())
-                .map(|v| (v.0, v.1.to_ascii_uppercase()))
-                .take(5)
-                .map(|(i, c)| match c {
-                    'C' => roget::Correctness::Correct,
-                    'M' => roget::Correctness::Misplaced,
-                    'W' => roget::Correctness::Wrong,
-                    _ => panic!("Invalid correctness char: '{c}' at pos {i}"),
-                })
-                .collect::<Vec<_>>()
-                .try_into()
-                .expect("Invalid correctness string")
+            loop {
+                match ask_for_correctness() {
+                    Ok(c) => break c,
+                    Err(e) => println!("{}", e),
+                }
+            }
         };
-        if correctness == [roget::Correctness::Correct;5] {
+        if correctness == [roget::Correctness::Correct; 5] {
+            println!("The answer was {}", guess.to_uppercase());
             return;
         }
         history.push(roget::Guess {
@@ -140,6 +127,50 @@ where
             mask: correctness,
         });
     }
+    println!("Game Over, only six guesses are allowed");
+}
+
+fn ask_for_correctness() -> Result<[roget::Correctness; 5], Cow<'static, str>> {
+    print!("Colors: ");
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+    let mut answer = String::with_capacity(7);
+    std::io::stdin().read_line(&mut answer).unwrap();
+    let answer = answer
+        .trim()
+        .chars()
+        .filter(|v| !v.is_whitespace())
+        .map(|v| v.to_ascii_uppercase())
+        .collect::<String>();
+    if answer.len() != 5 {
+        Err("The correctness string should be 5 chars long")?;
+    }
+    let parsed = answer
+        .chars()
+        .map(|c| match c {
+            'C' => Ok(roget::Correctness::Correct),
+            'M' => Ok(roget::Correctness::Misplaced),
+            'W' => Ok(roget::Correctness::Wrong),
+            _ => Err(format!("Invalid correctness char: '{c}'")),
+        })
+        .collect::<Vec<_>>();
+    if let Some(i) = parsed.iter().position(|v| v.is_err()) {
+        get_at_index(parsed, i)?;
+        unreachable!();
+    }
+    Ok(parsed
+        .into_iter()
+        .map(|v| {
+            v.expect(
+                "Errors should be detected before, and the function should have diverged already",
+            )
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("The parsed correctness is checked to be 5 items long"))
+}
+
+fn get_at_index<T>(mut source: Vec<T>, i: usize) -> T {
+    source.swap_remove(i)
 }
 
 fn play<G>(mut mk: impl FnMut() -> G, max: Option<usize>)
