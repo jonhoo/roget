@@ -3,6 +3,7 @@ use std::io::prelude::*;
 const DICTIONARY: &str = include_str!("dictionary.txt");
 
 fn main() {
+    println!("cargo:rerun-if-changed=dictionary.txt");
     let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let mut f = std::fs::File::create(out_dir.join("dictionary.rs"))
         .expect("could not create file in OUT_DIR");
