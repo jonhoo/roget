@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use clap::{ArgEnum, Parser};
 use roget::{Guesser, Solver};
 
@@ -38,8 +40,14 @@ struct Args {
     /// The number of games to run.
     ///
     /// If not passed, all Wordle games are run.
-    #[clap(short, long)]
+    #[clap(short, long, conflicts_with = "interactive")]
     games: Option<usize>,
+
+    /// Launch in interactive mode.
+    ///
+    /// This mode is intended for helping you play the game elsewhere. The program will tell you what word to guess next, and ask you for what combination of correct/misplaced/incorrect you got in return.
+    #[clap(short, long, conflicts_with = "games")]
+    interactive: bool,
 }
 
 #[derive(ArgEnum, Debug, Clone, Copy)]
@@ -83,7 +91,68 @@ fn main() {
         Rank::InfoPlusProbability => roget::Rank::InfoPlusProbability,
         Rank::ExpectedInformation => roget::Rank::ExpectedInformation,
     };
-    play(move || solver.build(), args.games);
+    if args.interactive {
+        play_interactive(solver.build());
+    } else {
+        play(move || solver.build(), args.games);
+    }
+}
+
+fn play_interactive(mut guesser: impl Guesser) {
+    let mut history = Vec::with_capacity(6);
+    println!("C: Correct / Green, M: Misplaced / Yellow, W: Wrong / Gray");
+    // Wordle only allows six guesses.
+    for _ in 1..=6 {
+        let guess = guesser.guess(&history);
+        println!("Guess:  {}", guess.to_uppercase());
+        let correctness = {
+            loop {
+                match ask_for_correctness() {
+                    Ok(c) => break c,
+                    Err(e) => println!("{}", e),
+                }
+            }
+        };
+        if correctness == [roget::Correctness::Correct; 5] {
+            println!("The answer was {}", guess.to_uppercase());
+            return;
+        }
+        history.push(roget::Guess {
+            word: Cow::Owned(guess),
+            mask: correctness,
+        });
+    }
+    println!("Game Over, only six guesses are allowed");
+}
+
+fn ask_for_correctness() -> Result<[roget::Correctness; 5], Cow<'static, str>> {
+    print!("Colors: ");
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+    let mut answer = String::with_capacity(7);
+    std::io::stdin().read_line(&mut answer).unwrap();
+    let answer = answer
+        .trim()
+        .chars()
+        .filter(|v| !v.is_whitespace())
+        .map(|v| v.to_ascii_uppercase())
+        .collect::<String>();
+    if answer.len() != 5 {
+        Err("You did not provide exactly 5 colors.")?;
+    }
+    let parsed = answer
+        .chars()
+        .map(|c| match c {
+            'C' => Ok(roget::Correctness::Correct),
+            'M' => Ok(roget::Correctness::Misplaced),
+            'W' => Ok(roget::Correctness::Wrong),
+            _ => Err(format!(
+                "The guess color '{c}' wasn't recognized: use C/M/W"
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(parsed
+        .try_into()
+        .expect("The parsed correctness is checked to be 5 items long"))
 }
 
 fn play<G>(mut mk: impl FnMut() -> G, max: Option<usize>)
