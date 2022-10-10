@@ -21,7 +21,7 @@ impl Default for Wordle {
 impl Wordle {
     pub fn new() -> Self {
         Self {
-            dictionary: HashSet::from_iter(DICTIONARY.iter().copied().map(|(word, _)| word)),
+            dictionary: HashSet::from_iter(DICT_MAP.keys().copied()),
         }
     }
 

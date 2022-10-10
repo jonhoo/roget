@@ -12,3 +12,8 @@ debug = true
 clap = { version = "3", features = ["derive"] }
 mimalloc = "0.1.29"
 once_cell = "1"
+phf = "0.11.1"
+
+[build-dependencies]
+phf = "0.11.1"
+phf_codegen = "0.11.1"
