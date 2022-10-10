@@ -178,12 +178,6 @@ pub trait Guesser {
     fn finish(&self, _guesses: usize) {}
 }
 
-impl Guesser for fn(history: &[Guess]) -> String {
-    fn guess(&mut self, history: &[Guess]) -> String {
-        (*self)(history)
-    }
-}
-
 #[cfg(test)]
 macro_rules! guesser {
     (|$history:ident| $impl:block) => {{
