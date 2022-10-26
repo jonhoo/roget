@@ -1,4 +1,4 @@
-use crate::{Correctness, Guess, Guesser, PackedCorrectness, DICTIONARY, MAX_MASK_ENUM};
+use crate::{Correctness, Guess, Guesser, PackedCorrectness, DICT_MAP, MAX_MASK_ENUM};
 use once_cell::sync::OnceCell;
 use once_cell::unsync::OnceCell as UnSyncOnceCell;
 use std::borrow::Cow;
@@ -15,7 +15,7 @@ static INITIAL_SIGMOID: OnceCell<Vec<(&'static str, f64, usize)>> = OnceCell::ne
 ///
 /// We store a `Box` because the array is quite large, and we're unlikely to have the stack space
 /// needed to store the whole thing on a given thread's stack.
-type Cache = [[Cell<Option<PackedCorrectness>>; DICTIONARY.len()]; DICTIONARY.len()];
+type Cache = [[Cell<Option<PackedCorrectness>>; DICT_MAP.len()]; DICT_MAP.len()];
 thread_local! {
     static COMPUTES: UnSyncOnceCell<Box<Cache>> = Default::default();
 }
@@ -161,10 +161,10 @@ impl Options {
     pub fn build(self) -> Solver {
         let remaining = if self.sigmoid {
             INITIAL_SIGMOID.get_or_init(|| {
-                let sum: usize = DICTIONARY.iter().map(|(_, count)| count).sum();
+                let sum: usize = DICT_MAP.values().sum();
 
                 if PRINT_SIGMOID {
-                    for &(word, count) in DICTIONARY.iter().rev() {
+                    for (&word, &count) in DICT_MAP.entries().rev() {
                         let p = count as f64 / sum as f64;
                         println!(
                             "{} {:.6}% -> {:.6}% ({})",
@@ -176,18 +176,18 @@ impl Options {
                     }
                 }
 
-                DICTIONARY
-                    .iter()
-                    .copied()
+                DICT_MAP
+                    .entries()
+                    .map(|(&k, &v)| (k, v))
                     .enumerate()
                     .map(|(idx, (word, count))| (word, sigmoid(count as f64 / sum as f64), idx))
                     .collect()
             })
         } else {
             INITIAL_COUNTS.get_or_init(|| {
-                DICTIONARY
-                    .iter()
-                    .copied()
+                DICT_MAP
+                    .entries()
+                    .map(|(&k, &v)| (k, v))
                     .enumerate()
                     .map(|(idx, (word, count))| (word, count as f64, idx))
                     .collect()

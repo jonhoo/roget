@@ -17,14 +17,10 @@ fn main() {
     }));
     words.sort_unstable_by_key(|&(_, count)| std::cmp::Reverse(count));
 
-    writeln!(
-        f,
-        "pub const DICTIONARY: [(&str, usize); {}] = [",
-        words.len()
-    )
-    .unwrap();
+    let mut hm = phf_codegen::OrderedMap::new();
     for (word, count) in words {
-        writeln!(f, "(\"{}\", {}),", word, count).unwrap();
+        hm.entry(word, &format!("{}", count));
     }
-    write!(f, "];").unwrap();
+
+    writeln!(f, "pub const DICT_MAP: phf::OrderedMap<&str, usize> = {};", hm.build()).unwrap();
 }
